@@ -1,0 +1,27 @@
+{
+  "name": "ayush360-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ayush360 Hospital Management System - React + TypeScript frontend (Front Desk / Patient Registration first)",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run check:boundaries && tsc -b && vite build",
+    "typecheck": "tsc -b",
+    "preview": "vite preview",
+    "check:boundaries": "node scripts/check-module-boundaries.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.9.0",
+    "vite": "^7.1.0"
+  }
+}
