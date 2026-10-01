@@ -1,0 +1,5 @@
+# Keep line endings consistent (LF) in the repo for everyone, Windows included.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

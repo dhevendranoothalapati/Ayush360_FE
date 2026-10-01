@@ -84,6 +84,8 @@ docs/         PROJECT-OVERVIEW.md (decisions, workflow, API, change log) + scree
 
 ## Working conventions
 
+- Git repo: https://github.com/dhevendranoothalapat/Ayush360_FE (branch `main`). The user commits and pushes from
+  `C:\Ayush360\Frontend` (`git add .` → `git commit -m "…"` → `git push`); Claude has no GitHub credentials.
 - The working copy lives at `C:\Ayush360\Frontend` on the user's machine. After changing files, verify they landed
   (compare sizes/contents) — partial or stale writes have happened before.
 - After each user-visible change: test the flow (desktop + phone width), then add a row to the change log in
