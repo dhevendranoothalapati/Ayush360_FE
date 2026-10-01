@@ -15,6 +15,7 @@ interface Props {
 export function RegistrationReceipt({ patient, visit }: Props) {
   const user = useCurrentUser();
   const reg = visit.registration;
+  const acute = reg.registrationType === 'EMERGENCY' || reg.registrationType === 'ICU';
   const receipt = visit.receipt;
   const age = ageFromDob(patient.dateOfBirth);
   const gender = GENDER_OPTIONS.find((g) => g.value === patient.gender)?.label ?? '';
@@ -28,14 +29,18 @@ export function RegistrationReceipt({ patient, visit }: Props) {
             <div className="rcpt-sub">{user.tenant.city}</div>
           </div>
           <div className="rcpt-title">
-            OP Registration Receipt
+            {reg.registrationType === 'ICU'
+              ? 'ICU Admission Entry'
+              : reg.registrationType === 'EMERGENCY'
+                ? 'Emergency Registration'
+                : 'OP Registration Receipt'}
             <span>{receipt?.receiptNumber ?? reg.registrationNumber}</span>
           </div>
         </header>
 
         <div className="rcpt-token">
           <div>
-            <span className="rcpt-label">Token</span>
+            <span className="rcpt-label">{reg.registrationType === 'ICU' ? 'Entry no.' : 'Token'}</span>
             <strong>{reg.tokenNumber}</strong>
           </div>
           <div>
@@ -74,6 +79,30 @@ export function RegistrationReceipt({ patient, visit }: Props) {
                 {reg.payerType === 'INSURANCE' ? `${reg.insurerName} · ${reg.policyNumber}` : 'Self'}
               </td>
             </tr>
+            {acute && (
+              <tr>
+                <th>{reg.registrationType === 'ICU' ? 'Unit / bed' : 'Triage'}</th>
+                <td>
+                  {reg.registrationType === 'ICU'
+                    ? `${reg.icuUnit}${reg.bedNumber ? ` · ${reg.bedNumber}` : ''}`
+                    : reg.triageLevel || '-'}
+                </td>
+                <th>Attendant</th>
+                <td>
+                  {reg.attendantName || '-'}
+                  {reg.attendantPhone ? ` · ${formatMobile(reg.attendantPhone)}` : ''}
+                </td>
+              </tr>
+            )}
+            {acute && reg.isMlc && (
+              <tr>
+                <th>MLC</th>
+                <td colSpan={3}>
+                  {reg.mlcNumber} · {reg.policeStation}
+                  {reg.firNumber ? ` · FIR/GD ${reg.firNumber}` : ''}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
 
@@ -81,11 +110,15 @@ export function RegistrationReceipt({ patient, visit }: Props) {
           <tbody>
             <tr className="rcpt-total">
               <th>
-                Amount paid
+                {acute
+                  ? receipt
+                    ? 'Advance / deposit received (charges billed later)'
+                    : 'No payment now — charges billed later'
+                  : 'Amount paid'}
                 {reg.isFollowUp ? ` (free follow-up of ${reg.followUpOf})` : ''}
               </th>
               <td className="num">
-                {formatCurrency(receipt?.amount ?? reg.consultationFee)}
+                {formatCurrency(receipt?.amount ?? (acute ? 0 : reg.consultationFee))}
                 <small>
                   {' '}
                   {receipt ? PAYMENT_MODE_LABEL[receipt.mode] : ''}
@@ -97,7 +130,10 @@ export function RegistrationReceipt({ patient, visit }: Props) {
         </table>
 
         <footer className="rcpt-foot">
-          Registered by {user.displayName} · Please wait for your token to be called
+          Registered by {user.displayName}
+          {reg.registrationType === 'ICU'
+            ? ' · Keep this slip for ICU visiting and billing'
+            : ' · Please wait for your token to be called'}
         </footer>
       </div>
     </div>,

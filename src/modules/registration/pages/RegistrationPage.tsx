@@ -10,6 +10,7 @@ import { FrontDeskHero } from '../components/FrontDeskHero';
 import { RegistrationStepper } from '../components/RegistrationStepper';
 import { PayerDetailsForm } from '../components/PayerDetailsForm';
 import { RegistrationReceipt } from '../components/RegistrationReceipt';
+import { AcuteDetailsForm } from '../components/AcuteDetailsForm';
 import { useRegistrationForm } from '../hooks/useRegistrationForm';
 import '../registration.css';
 
@@ -33,12 +34,15 @@ export default function RegistrationPage() {
   function printReceipt() {
     window.print();
   }
-  const freeFollowUp = feeQuote?.isFollowUp === true;
+  const acute = form.isAcute; // Emergency or ICU: no consultation fee, optional deposit
+  const deposit = acute ? Number(form.visit.depositAmount || 0) : 0;
+  const freeFollowUp = !acute && feeQuote?.isFollowUp === true;
+  const noPaymentNow = (acute && deposit === 0) || freeFollowUp;
 
   async function startRegistration() {
     if (!form.validateAll()) return;
-    if (freeFollowUp) {
-      // No fee to collect: register straight away.
+    if (noPaymentNow) {
+      // Emergency / ICU without deposit, or free follow-up: nothing to collect, register straight away.
       try {
         await form.submit();
       } catch {
@@ -62,7 +66,13 @@ export default function RegistrationPage() {
           <div>
             <div className="success-kicker">
               Registration successful ·{' '}
-              {result.registration.isFollowUp ? 'Free follow-up (no fee)' : 'Payment received'}
+              {result.registration.registrationType === 'ICU'
+                ? 'ICU admission recorded — charges billed per day'
+                : result.registration.registrationType === 'EMERGENCY'
+                ? 'Emergency — charges billed later'
+                : result.registration.isFollowUp
+                  ? 'Free follow-up (no fee)'
+                  : 'Payment received'}
             </div>
             <div className="success-token">Token number: {result.registration.tokenNumber}</div>
             <div className="success-text">
@@ -98,6 +108,12 @@ export default function RegistrationPage() {
             <PatientDetailsForm form={form} disabled={form.saving} />
             <hr className="divider" />
             <VisitDetailsForm form={form} disabled={form.saving} />
+            {acute && (
+              <>
+                <hr className="divider" />
+                <AcuteDetailsForm form={form} disabled={form.saving} />
+              </>
+            )}
             <hr className="divider" />
             <PayerDetailsForm form={form} disabled={form.saving} />
           </div>
@@ -158,8 +174,18 @@ export default function RegistrationPage() {
                 <button className="btn btn-secondary btn-lg" onClick={form.saveDraft}>
                   Save draft
                 </button>
-                <button className="btn btn-primary btn-lg" onClick={() => void startRegistration()} disabled={form.saving}>
-                  {form.saving ? 'Registering…' : freeFollowUp ? 'Register free follow-up' : 'Registration'}
+                <button
+                  className={`btn btn-lg ${acute ? 'btn-emergency' : 'btn-primary'}`}
+                  onClick={() => void startRegistration()}
+                  disabled={form.saving}
+                >
+                  {form.saving
+                    ? 'Registering…'
+                    : acute
+                      ? `Register ${form.isIcu ? 'ICU admission' : 'emergency'}${deposit > 0 ? ' & collect deposit' : ''}`
+                      : freeFollowUp
+                        ? 'Register free follow-up'
+                        : 'Registration'}
                 </button>
               </>
             )}
@@ -174,7 +200,8 @@ export default function RegistrationPage() {
       {selectedDoctor && !openVisit && (
         <PaymentDialog
           open={payOpen}
-          amount={feeQuote?.fee ?? selectedDoctor.consultationFee}
+          amount={acute ? deposit : (feeQuote?.fee ?? selectedDoctor.consultationFee)}
+          title={acute ? 'Collect advance / deposit' : undefined}
           patientName={patientName}
           doctorName={selectedDoctor.name}
           onClose={() => setPayOpen(false)}

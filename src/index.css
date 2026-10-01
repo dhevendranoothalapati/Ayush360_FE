@@ -320,6 +320,18 @@ code {
   background: var(--success-bg);
   color: var(--success);
 }
+.badge-warning {
+  background: var(--amber-50);
+  color: #8a5a00;
+}
+.btn-emergency {
+  background: linear-gradient(135deg, #d6334e 0%, #e0487a 100%);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(214, 51, 78, 0.3);
+}
+.btn-emergency:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
 .badge-neutral {
   background: var(--surface-2);
   color: var(--ink-2);

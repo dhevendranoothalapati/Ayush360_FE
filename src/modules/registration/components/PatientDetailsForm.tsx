@@ -162,7 +162,12 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
               </div>
             </FormField>
           </div>
-          <FormField label="Mobile number" htmlFor="mobileNumber" required error={errors.mobileNumber}>
+          <FormField
+            label="Mobile number"
+            htmlFor="mobileNumber"
+            required={!form.isAcute}
+            error={errors.mobileNumber}
+          >
             <div className="input-group">
               <span className="input-prefix">+91</span>
               <input
@@ -176,7 +181,13 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
               />
             </div>
           </FormField>
-          <FormField label="Address" htmlFor="addressLine1" required error={errors.addressLine1} className="span-2">
+          <FormField
+            label="Address"
+            htmlFor="addressLine1"
+            required={!form.isAcute}
+            error={errors.addressLine1}
+            className="span-2"
+          >
             <textarea
               id="addressLine1"
               className="textarea"

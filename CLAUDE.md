@@ -70,6 +70,7 @@ docs/         PROJECT-OVERVIEW.md (decisions, workflow, API, change log) + scree
 - **Collections**: receptionists see only **My collection** (their receipts); hospital total needs `COLLECTION_VIEW_ALL` (Admin).
   Counts (registered / waiting / new) are hospital-wide and auto-refresh every 30 s.
 - **Tokens / visit / receipt numbers are generated server-side**; the backend must make this atomic per hospital per day.
+- **Emergency / ICU** visit types ("acute"): E-/I- token series, `registrationType` EMERGENCY/ICU, **no consultation fee** (charges billed later), optional advance/deposit (receipt + My collection), arrival time, brought by/triage (ER), ICU unit/bed/admission source + attendant (ICU), MLC with server MLC number, mobile/address optional. Cannot be converted to/from OPD.
 - **Save draft** stays in the browser session only — never creates a queue entry.
 - **Receipt**: one A5 page, essentials only (`RegistrationReceipt.tsx`, printed via `.print-area`).
 

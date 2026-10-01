@@ -16,10 +16,12 @@ import type {
   PatientContext,
   PatientInput,
   PayerFields,
+  AcuteFields,
   Receipt,
   Registration,
   VisitInput,
 } from '@/modules/registration/types';
+import { EMPTY_ACUTE } from '@/modules/registration/types';
 import { patterns, isBlank } from '@/shared/utils/validation';
 import { getDb, nextSequence, reloadDb, saveDb, type DbUser, type Tenanted } from './mockDb';
 
@@ -95,14 +97,16 @@ function authorize(ctx: Ctx, ...required: Permission[]) {
 
 // ---------------- registration helpers ----------------
 
-function validatePatient(p: PatientInput): Record<string, string> {
+function validatePatient(p: PatientInput, emergency = false): Record<string, string> {
   const e: Record<string, string> = {};
   if (isBlank(p.firstName)) e.firstName = 'First name is required';
   if (isBlank(p.lastName)) e.lastName = 'Last name is required';
   if (!p.gender) e.gender = 'Gender is required';
   if (!p.dateOfBirth) e.dateOfBirth = 'Age or date of birth is required';
-  if (!patterns.mobile.test(p.mobileNumber)) e.mobileNumber = 'Enter a valid 10-digit mobile number';
-  if (isBlank(p.addressLine1)) e.addressLine1 = 'Address is required';
+  // Emergency: patient may arrive unconscious / unaccompanied — contact details can follow later.
+  if (!(emergency && !p.mobileNumber) && !patterns.mobile.test(p.mobileNumber))
+    e.mobileNumber = 'Enter a valid 10-digit mobile number';
+  if (!emergency && isBlank(p.addressLine1)) e.addressLine1 = 'Address is required';
   if (p.email && !patterns.email.test(p.email)) e.email = 'Enter a valid email';
   if (p.postalCode && !patterns.postalCode.test(p.postalCode)) e.postalCode = 'Enter a valid 6-digit PIN code';
   return e;
@@ -134,6 +138,53 @@ function payerColumns(v: VisitInput): PayerFields {
     policyHolderRelation: insured ? v.policyHolderRelation : '',
     policyValidUntil: insured ? v.policyValidUntil : '',
   };
+}
+
+const isAcute = (v: { source: string }) => v.source === 'EMERGENCY' || v.source === 'ICU';
+
+function validateAcute(v: VisitInput): Record<string, string> {
+  const e: Record<string, string> = {};
+  if (!isAcute(v)) return e;
+  const icu = v.source === 'ICU';
+  if (!v.arrivalTime) e.arrivalTime = icu ? 'Admission time is required' : 'Arrival time is required';
+  if (v.attendantPhone && !patterns.mobile.test(v.attendantPhone)) e.attendantPhone = 'Enter a valid 10-digit mobile number';
+  if (v.isMlc && isBlank(v.policeStation)) e.policeStation = 'Police station is required for an MLC';
+  if (v.depositAmount && !/^\d+$/.test(v.depositAmount)) e.depositAmount = 'Enter amount in rupees';
+  if (icu) {
+    if (!v.icuUnit) e.icuUnit = 'ICU unit is required';
+    if (!v.admissionSource) e.admissionSource = 'Admission source is required';
+    if (isBlank(v.attendantName)) e.attendantName = 'Attendant is required for ICU';
+    if (!v.attendantPhone) e.attendantPhone = 'Attendant phone is required for ICU';
+  } else {
+    if (!v.broughtBy) e.broughtBy = 'Brought by is required';
+    if (!v.triageLevel) e.triageLevel = 'Triage colour is required';
+  }
+  return e;
+}
+
+/** Emergency / ICU columns stored on the visit (blank for OPD). */
+function acuteColumns(v: VisitInput): AcuteFields {
+  if (!isAcute(v)) return { ...EMPTY_ACUTE };
+  const icu = v.source === 'ICU';
+  return {
+    arrivalTime: v.arrivalTime,
+    broughtBy: icu ? '' : v.broughtBy,
+    attendantName: v.attendantName.trim(),
+    attendantPhone: v.attendantPhone,
+    triageLevel: icu ? '' : v.triageLevel,
+    isMlc: v.isMlc,
+    policeStation: v.isMlc ? v.policeStation.trim() : '',
+    firNumber: v.isMlc ? v.firNumber.trim() : '',
+    icuUnit: icu ? v.icuUnit : '',
+    bedNumber: icu ? v.bedNumber.trim() : '',
+    admissionSource: icu ? v.admissionSource : '',
+    referredFrom: icu ? v.referredFrom.trim() : '',
+  };
+}
+
+function nextMlcNumber(ctx: Ctx): string {
+  const year = new Date().getFullYear();
+  return `MLC-${year}-${pad(nextSequence(`mlc:${ctx.tenantId}:${year}`), 4)}`;
 }
 
 function findPatient(ctx: Ctx, id: number): Tenanted<Patient> {
@@ -247,10 +298,18 @@ function updateVisit(ctx: Ctx, registrationId: number, visit: VisitInput): Regis
   if (!dept) errors.departmentId = 'Select a department';
   if (!doctor) errors.doctorId = 'Select a doctor';
   if (isBlank(visit.reasonForVisit)) errors.reasonForVisit = 'Reason for visit is required';
-  Object.assign(errors, validatePayer(visit));
+  Object.assign(errors, validatePayer(visit), validateAcute(visit));
   if (Object.keys(errors).length) throw new HttpError(400, 'Please correct the highlighted fields', errors);
 
-  if (doctor!.id !== reg.doctorId) {
+  const kindOf = (src: string) => (src === 'EMERGENCY' || src === 'ICU' ? src : 'OP');
+  if (kindOf(visit.source) !== kindOf(reg.source)) {
+    throw new HttpError(409, 'OPD, Emergency and ICU entries cannot be converted into each other. Register a new visit instead.');
+  }
+  if (isAcute(reg)) {
+    // No consultation fee on Emergency / ICU entries — nothing to re-check. Deposit cannot change here.
+    if (visit.isMlc && !reg.mlcNumber) reg.mlcNumber = nextMlcNumber(ctx);
+    Object.assign(reg, acuteColumns(visit));
+  } else if (doctor!.id !== reg.doctorId) {
     // Changing doctor must not change what was charged; otherwise billing needs an adjustment.
     const newFee = reg.isFollowUp ? 0 : doctor!.consultationFee;
     if (newFee !== reg.consultationFee) {
@@ -284,6 +343,10 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
 
   // --- visit validation
   const { visit, payment } = req;
+  // Emergency / ICU ("acute"): no consultation fee, optional advance deposit, relaxed patient contact.
+  const emergency = isAcute(visit);
+  const icu = visit.source === 'ICU';
+  const deposit = emergency ? Number(visit.depositAmount || 0) : 0;
   const dept = db.departments.find((d) => d.id === visit.departmentId && d.tenantId === ctx.tenantId);
   const doctor = db.doctors.find(
     (d) => d.id === visit.doctorId && d.tenantId === ctx.tenantId && d.departmentId === dept?.id,
@@ -292,7 +355,7 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
   if (!dept) errors.departmentId = 'Select a department';
   if (!doctor) errors.doctorId = 'Select a doctor';
   if (isBlank(visit.reasonForVisit)) errors.reasonForVisit = 'Reason for visit is required';
-  Object.assign(errors, validatePayer(visit));
+  Object.assign(errors, validatePayer(visit), validateAcute(visit));
 
   // --- patient (returning or new)
   let patient: Tenanted<Patient> | undefined;
@@ -302,11 +365,11 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
     if (req.patient) {
       // Returning patient whose details were corrected at the desk.
       authorize(ctx, Permissions.PATIENT_EDIT);
-      Object.assign(errors, validatePatient(req.patient));
+      Object.assign(errors, validatePatient(req.patient, emergency));
     }
   } else if (req.patient) {
     authorize(ctx, Permissions.PATIENT_CREATE);
-    Object.assign(errors, validatePatient(req.patient));
+    Object.assign(errors, validatePatient(req.patient, emergency));
     isNewPatient = true;
   } else {
     throw new HttpError(400, 'Patient details are required');
@@ -323,13 +386,18 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
     }
   }
 
-  // --- fee (server decides; follow-up rule applied) and payment BEFORE anything is created
-  const quote = quoteFee(ctx, doctor!.id, patient?.id);
+  // --- fee (server decides; follow-up rule applied) and payment BEFORE anything is created.
+  // Emergency: treat first — no payment now; the casualty fee is billed later.
+  const quote = emergency
+    ? { ...quoteFee(ctx, doctor!.id), fee: 0, isFollowUp: false, followUpOf: null }
+    : quoteFee(ctx, doctor!.id, patient?.id);
   let paymentMode: Receipt['mode'] = 'FOLLOW_UP';
   let reference: string | null = null;
-  if (quote.fee > 0) {
-    if (!payment || payment.amount !== quote.fee) {
-      throw new HttpError(400, 'Payment amount does not match the consultation fee');
+  // Amount to take now: consultation fee for OPD, the advance/deposit (if any) for Emergency / ICU.
+  const dueNow = emergency ? deposit : quote.fee;
+  if (dueNow > 0) {
+    if (!payment || payment.amount !== dueNow) {
+      throw new HttpError(400, emergency ? 'Payment amount does not match the deposit' : 'Payment amount does not match the consultation fee');
     }
     if (payment.mode !== 'CASH' && isBlank(payment.referenceNumber)) {
       throw new HttpError(400, 'Transaction reference is required for UPI / card payments');
@@ -363,15 +431,17 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
   }
   const p = patient!;
   const day = todayKey();
-  const tokenSeq = nextSequence(`token:${ctx.tenantId}:${day}`);
+  // Emergency cases get their own token series (E-001…) so casualty is never mixed into the OPD queue.
+  const series = icu ? 'I' : emergency ? 'E' : 'A'; // ICU entries: I-001…, Emergency: E-001…, OPD: A-001…
+  const tokenSeq = nextSequence(`token:${ctx.tenantId}:${day}:${series}`);
   const regSeq = nextSequence(`reg:${ctx.tenantId}:${day}`);
 
   const registration: Tenanted<Registration> = {
     tenantId: ctx.tenantId,
     id: nextSequence('registrationId'),
-    registrationNumber: `OP-${day}-${pad(regSeq, 4)}`,
+    registrationNumber: `${icu ? 'ICU' : emergency ? 'ER' : 'OP'}-${day}-${pad(regSeq, 4)}`,
     registrationDate: now,
-    registrationType: visit.registrationType,
+    registrationType: icu ? 'ICU' : emergency ? 'EMERGENCY' : 'OP',
     patientId: p.id,
     departmentId: dept!.id,
     departmentName: dept!.name,
@@ -382,9 +452,13 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
     messageConsent: visit.messageConsent,
     visitStatus: 'REGISTERED',
     queueStatus: 'WAITING',
-    tokenNumber: `A-${pad(tokenSeq, 3)}`,
-    consultationFee: quote.fee,
-    paymentStatus: 'PAID',
+    tokenNumber: `${series}-${pad(tokenSeq, 3)}`,
+    consultationFee: emergency ? 0 : quote.fee,
+    // Emergency / ICU: charges (and any balance after the deposit) are billed later.
+    paymentStatus: emergency ? 'UNPAID' : 'PAID',
+    depositAmount: deposit,
+    mlcNumber: emergency && visit.isMlc ? nextMlcNumber(ctx) : null,
+    ...acuteColumns(visit),
     isFollowUp: quote.isFollowUp,
     followUpOf: quote.followUpOf,
     ...payerColumns(visit),
@@ -392,23 +466,31 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
   };
   db.registrations.push(registration);
 
-  const receipt = {
-    tenantId: ctx.tenantId,
-    registrationId: registration.id,
-    receiptNumber: `RC-${day}-${pad(registration.id, 5)}`,
-    amount: quote.fee,
-    mode: paymentMode,
-    referenceNumber: reference,
-    paidAt: now,
-    collectedByUserId: ctx.user.id, // whose cash drawer this belongs to
-  };
-  db.receipts.push(receipt);
+  // Emergency / ICU without deposit: nothing collected, so no receipt (billed later in Billing).
+  const receipt =
+    dueNow === 0 && emergency
+      ? null
+      : {
+        tenantId: ctx.tenantId,
+        registrationId: registration.id,
+        receiptNumber: `RC-${day}-${pad(registration.id, 5)}`,
+        amount: dueNow,
+        mode: paymentMode,
+        referenceNumber: reference,
+        paidAt: now,
+        collectedByUserId: ctx.user.id, // whose cash drawer this belongs to
+      };
+  if (receipt) db.receipts.push(receipt);
 
   p.lastVisitDate = now;
   p.updatedAt = now;
   saveDb();
 
-  const { registrationId, collectedByUserId, ...receiptOut } = strip(receipt);
+  let receiptOut: Receipt | null = null;
+  if (receipt) {
+    const { registrationId, collectedByUserId, ...rest } = strip(receipt);
+    receiptOut = rest;
+  }
   return { isNewPatient, patient: strip(p) as Patient, registration: strip(registration) as Registration, receipt: receiptOut };
 }
 

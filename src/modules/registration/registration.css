@@ -1002,3 +1002,129 @@
   background: var(--danger-bg);
   color: var(--danger);
 }
+
+/* ---------- emergency ---------- */
+.emergency-note {
+  margin: -4px 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--rose-50);
+  border: 1px solid #f5b8cb;
+  color: #8c1d3d;
+  font-size: 0.88rem;
+}
+.select[data-emergency] {
+  border-color: var(--rose);
+  color: #b0173f;
+  font-weight: 700;
+  background-color: var(--rose-50);
+}
+.visit-card.is-emergency .visit-card-head {
+  background: linear-gradient(120deg, #c62844, #e0487a);
+}
+.visit-card.is-emergency .token-ticket {
+  background: linear-gradient(135deg, #c62844 0%, #e0487a 100%);
+  box-shadow: 0 12px 24px rgba(214, 51, 78, 0.28);
+}
+.visit-card .emergency-hint {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--rose-50);
+  color: #8c1d3d;
+}
+
+/* ---------- emergency / ICU details ---------- */
+.acute-section {
+  padding: 18px;
+  margin: 0 -6px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff6f9 0%, #ffffff 100%);
+  border: 1px solid #f7cdd9;
+}
+.icu-note {
+  background: #fff1f5;
+}
+.triage-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.triage-chip {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  cursor: pointer;
+}
+.triage-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.triage-chip small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.triage-dot {
+  grid-row: span 2;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--tri);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tri) 25%, transparent);
+}
+.triage-red { --tri: #d32f2f; }
+.triage-orange { --tri: #ef6c00; }
+.triage-yellow { --tri: #f2b705; }
+.triage-green { --tri: #2e9d4f; }
+.triage-chip.on {
+  border-color: var(--tri);
+  background: color-mix(in srgb, var(--tri) 10%, #fff);
+}
+.triage-chip:focus-within {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tri) 25%, transparent);
+}
+.triage-pill {
+  display: inline-block;
+  padding: 2px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--tri);
+}
+.triage-pill.triage-yellow {
+  color: #5a4300;
+}
+.mlc-check strong {
+  color: #b0173f;
+}
+.mlc-number {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.charges-note {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+@media (max-width: 640px) {
+  .triage-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .acute-section {
+    padding: 14px;
+    margin: 0;
+  }
+}

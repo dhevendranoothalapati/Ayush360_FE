@@ -6,23 +6,25 @@ import type { RegistrationFormState } from '../hooks/useRegistrationForm';
 export function RegistrationStepper({ form }: { form: RegistrationFormState }) {
   const { patient, selectedPatient, visit, openVisit, feeQuote } = form;
 
+  const registered = openVisit !== null;
+  const regType = registered ? openVisit.registration.registrationType : null;
+  const emergency = registered ? regType === 'EMERGENCY' || regType === 'ICU' : visit.source === 'EMERGENCY' || visit.source === 'ICU';
+  const deposit = registered ? openVisit.registration.depositAmount ?? 0 : Number(visit.depositAmount || 0);
   const detailsComplete =
     !isBlank(patient.firstName) &&
     !isBlank(patient.lastName) &&
     patient.gender !== '' &&
-    patient.mobileNumber.length === 10 &&
-    !isBlank(patient.addressLine1);
+    (emergency || (patient.mobileNumber.length === 10 && !isBlank(patient.addressLine1)));
   const visitDone = visit.departmentId !== '' && visit.doctorId !== '' && !isBlank(visit.reasonForVisit);
-  const registered = openVisit !== null;
-  const followUp = registered ? openVisit.registration.isFollowUp : feeQuote?.isFollowUp === true;
+  const followUp = !emergency && (registered ? openVisit.registration.isFollowUp : feeQuote?.isFollowUp === true);
 
   const steps = [
     { label: 'Patient', hint: selectedPatient ? 'Existing patient' : 'New patient', done: detailsComplete || registered },
-    { label: 'Visit', hint: 'Doctor & reason', done: visitDone || registered },
+    { label: 'Visit', hint: emergency ? 'Doctor & details' : 'Doctor & reason', done: visitDone || registered },
     {
       label: 'Payment',
-      hint: followUp ? 'Free follow-up' : 'Consultation fee',
-      done: registered || (followUp && visitDone),
+      hint: emergency ? (deposit > 0 ? 'Advance / deposit' : 'Billed later') : followUp ? 'Free follow-up' : 'Consultation fee',
+      done: registered || ((followUp || (emergency && deposit === 0)) && visitDone),
     },
     { label: 'Token', hint: registered ? openVisit.registration.tokenNumber : 'Joins queue', done: registered },
   ];

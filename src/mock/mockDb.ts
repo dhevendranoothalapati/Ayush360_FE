@@ -6,6 +6,7 @@
  */
 import { Modules, Permissions, type ModuleCode, type Permission } from '@/core/permissions/permissions';
 import type { Department, Doctor, Patient, PayerFields, Receipt, Registration } from '@/modules/registration/types';
+import { EMPTY_ACUTE } from '@/modules/registration/types';
 
 export interface DbTenant {
   id: number;
@@ -40,7 +41,7 @@ export interface MockDb {
   sequences: Record<string, number>;
 }
 
-const STORAGE_KEY = 'ayush360.mockdb.v7';
+const STORAGE_KEY = 'ayush360.mockdb.v9';
 
 function iso(daysAgo = 0): string {
   const d = new Date();
@@ -122,6 +123,9 @@ function pastVisit(
     policyHolderRelation: '',
     policyValidUntil: '',
     ...payer,
+    ...EMPTY_ACUTE,
+    depositAmount: 0,
+    mlcNumber: null,
     createdAt: iso(daysAgo),
   };
 }
@@ -135,6 +139,8 @@ function seed(): MockDb {
     ['PED', 'Pediatrics'],
     ['GYN', 'Gynecology'],
     ['DERM', 'Dermatology'],
+    ['ER', 'Emergency / Casualty'],
+    ['ICU', 'Critical Care (ICU)'],
   ];
 
   const departments: Tenanted<Department>[] = [];
@@ -152,11 +158,16 @@ function seed(): MockDb {
     { tenantId: 10, id: 1006, name: 'Dr. Kavitha Rao', departmentId: 1005, qualification: 'MD Pediatrics', consultationFee: 600 },
     { tenantId: 10, id: 1007, name: 'Dr. Radha Menon', departmentId: 1006, qualification: 'MS OBG', consultationFee: 700 },
     { tenantId: 10, id: 1008, name: 'Dr. Arjun Desai', departmentId: 1007, qualification: 'MD Dermatology', consultationFee: 650 },
+    { tenantId: 10, id: 1009, name: 'Dr. Rahul Nair (Casualty)', departmentId: 1008, qualification: 'MBBS, MEM', consultationFee: 300 },
+    { tenantId: 10, id: 1010, name: 'Dr. Anjali Rao (Intensivist)', departmentId: 1009, qualification: 'MD, IDCCM', consultationFee: 1200 },
+    { tenantId: 10, id: 1011, name: 'Dr. Kiran Shetty (Intensivist)', departmentId: 1009, qualification: 'DM Critical Care', consultationFee: 1500 },
     // Green Valley (tenant 20)
     { tenantId: 20, id: 2001, name: 'Dr. Suresh Gowda', departmentId: 2001, qualification: 'MBBS, MD', consultationFee: 450 },
     { tenantId: 20, id: 2002, name: 'Dr. Nisha Hegde', departmentId: 2002, qualification: 'DM Cardiology', consultationFee: 1000 },
     { tenantId: 20, id: 2003, name: 'Dr. Prakash Rao', departmentId: 2003, qualification: 'MS Ortho', consultationFee: 750 },
     { tenantId: 20, id: 2004, name: 'Dr. Lavanya S', departmentId: 2005, qualification: 'MD Pediatrics', consultationFee: 550 },
+    { tenantId: 20, id: 2005, name: 'Dr. Vinay K (Casualty)', departmentId: 2008, qualification: 'MBBS', consultationFee: 350 },
+    { tenantId: 20, id: 2006, name: 'Dr. Meghana P (Intensivist)', departmentId: 2009, qualification: 'IDCCM', consultationFee: 1000 },
   ];
 
   const patients: Tenanted<Patient>[] = [

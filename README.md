@@ -21,13 +21,13 @@ The mock API is on by default (`VITE_USE_MOCK_API=true`). Sign in with one of th
 
 | Username | Role | Hospital (tenant) |
 |---|---|---|
-| `dev` | Receptionist | Sunrise Multispeciality Hospital (10) |
+| `dev` | Receptionist | Swetha Multispeciality Hospital (10) |
 | `hari` | Receptionist | Green Valley Hospital (20). Has bought Front Desk and Doctor only |
-| `priya` | Admin | Sunrise (10). Sees every module |
-| `sriya` | Doctor | Sunrise (10). Can't open Registration |
+| `priya` | Admin | Swetha (10). Sees every module |
+| `sriya` | Doctor | Swetha (10). Can't open Registration |
 
 Seeded patients to try in the search: `9876543210`, `SUN-000102` and `Ananya`. Each hospital only sees its own patients.
-Suresh Kumar (`9848012345`) saw Dr. Meera Shah 4 days ago, so a new visit to her at Sunrise is a **free follow-up** (10-day window).
+Suresh Kumar (`9848012345`) saw Dr. Meera Shah 4 days ago, so a new visit to her at Swetha is a **free follow-up** (10-day window).
 To simulate a declined payment, choose UPI or Card and enter `0000` as the reference.
 To reset the mock data, run `resetMockDb()` in the browser console.
 

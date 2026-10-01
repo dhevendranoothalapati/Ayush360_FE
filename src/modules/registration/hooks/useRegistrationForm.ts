@@ -4,9 +4,12 @@ import { useCurrentUser } from '@/core/authentication/AuthContext';
 import { isBlank, patterns } from '@/shared/utils/validation';
 import { registrationApi } from '../api/registrationApi';
 import {
+  EMPTY_ACUTE,
   EMPTY_INSURANCE,
   EMPTY_PATIENT,
   EMPTY_VISIT,
+  isAcuteSource,
+  type AcuteFields,
   type CreateRegistrationResponse,
   type Department,
   type Doctor,
@@ -71,8 +74,18 @@ function payerOf(r: Partial<PayerFields> | null | undefined): PayerFields {
   };
 }
 
+function acuteOf(r: Partial<AcuteFields>): AcuteFields {
+  const out = { ...EMPTY_ACUTE };
+  (Object.keys(EMPTY_ACUTE) as (keyof AcuteFields)[]).forEach((k) => {
+    if (r[k] !== undefined && r[k] !== null) (out as Record<string, unknown>)[k] = r[k];
+  });
+  return out;
+}
+
 function toVisitInput(r: Registration): VisitInput {
   return {
+    ...acuteOf(r),
+    depositAmount: r.depositAmount ? String(r.depositAmount) : '',
     departmentId: r.departmentId,
     doctorId: r.doctorId,
     registrationType: r.registrationType,
@@ -90,7 +103,13 @@ function newVisitFor(lastVisit: Registration | null): VisitInput {
 
 /** Drop insurance fields when the patient pays themselves. */
 function cleanVisit(v: VisitInput): VisitInput {
-  return v.payerType === 'SELF' ? { ...v, ...EMPTY_INSURANCE } : v;
+  const registrationType = v.source === 'EMERGENCY' ? 'EMERGENCY' : v.source === 'ICU' ? 'ICU' : 'OP';
+  let out: VisitInput = { ...v, registrationType };
+  if (!isAcuteSource(v.source)) out = { ...out, ...EMPTY_ACUTE, depositAmount: '' };
+  if (v.source === 'EMERGENCY') out = { ...out, icuUnit: '', bedNumber: '', admissionSource: '', referredFrom: '' };
+  if (v.source === 'ICU') out = { ...out, triageLevel: '' };
+  if (!out.isMlc) out = { ...out, policeStation: '', firNumber: '' };
+  return out.payerType === 'SELF' ? { ...out, ...EMPTY_INSURANCE } : out;
 }
 
 function sameValues<T extends object>(a: T, b: T): boolean {
@@ -101,7 +120,8 @@ function cleanPatient(p: PatientInput): PatientInput {
   return { ...p, firstName: p.firstName.trim(), middleName: p.middleName.trim(), lastName: p.lastName.trim() };
 }
 
-export function validatePatient(p: PatientInput): FieldErrors {
+/** emergency = casualty case: mobile and address may be unknown at arrival. */
+export function validatePatient(p: PatientInput, emergency = false): FieldErrors {
   const e: FieldErrors = {};
   if (isBlank(p.firstName)) e.firstName = 'First name is required';
   else if (!patterns.name.test(p.firstName.trim())) e.firstName = 'Use letters only';
@@ -109,8 +129,9 @@ export function validatePatient(p: PatientInput): FieldErrors {
   else if (!patterns.name.test(p.lastName.trim())) e.lastName = 'Use letters only';
   if (!p.gender) e.gender = 'Select gender';
   if (!p.dateOfBirth) e.dateOfBirth = 'Enter age or date of birth';
-  if (!patterns.mobile.test(p.mobileNumber)) e.mobileNumber = 'Enter a valid 10-digit mobile number';
-  if (isBlank(p.addressLine1)) e.addressLine1 = 'Address is required';
+  if (!(emergency && !p.mobileNumber) && !patterns.mobile.test(p.mobileNumber))
+    e.mobileNumber = 'Enter a valid 10-digit mobile number';
+  if (!emergency && isBlank(p.addressLine1)) e.addressLine1 = 'Address is required';
   if (p.email && !patterns.email.test(p.email)) e.email = 'Enter a valid email address';
   if (p.postalCode && !patterns.postalCode.test(p.postalCode)) e.postalCode = 'Enter a valid 6-digit PIN code';
   if (p.dateOfBirth && new Date(p.dateOfBirth) > new Date()) e.dateOfBirth = 'Date of birth cannot be in the future';
@@ -124,6 +145,23 @@ export function validateVisit(v: VisitInput): FieldErrors {
   if (v.departmentId === '') e.departmentId = 'Select a department';
   if (v.doctorId === '') e.doctorId = 'Select a doctor';
   if (isBlank(v.reasonForVisit)) e.reasonForVisit = 'Reason for visit is required';
+  if (isAcuteSource(v.source)) {
+    const icu = v.source === 'ICU';
+    if (!v.arrivalTime) e.arrivalTime = icu ? 'Enter admission date and time' : 'Enter arrival date and time';
+    else if (new Date(v.arrivalTime).getTime() > Date.now() + 5 * 60_000) e.arrivalTime = 'Time cannot be in the future';
+    if (v.attendantPhone && !patterns.mobile.test(v.attendantPhone)) e.attendantPhone = 'Enter a valid 10-digit mobile number';
+    if (v.isMlc && isBlank(v.policeStation)) e.policeStation = 'Police station is required for an MLC';
+    if (v.depositAmount && !/^\d+$/.test(v.depositAmount)) e.depositAmount = 'Enter amount in rupees';
+    if (icu) {
+      if (!v.icuUnit) e.icuUnit = 'Select ICU unit';
+      if (!v.admissionSource) e.admissionSource = 'Select where the patient came from';
+      if (isBlank(v.attendantName)) e.attendantName = 'Attendant / next of kin is required for ICU';
+      if (!v.attendantPhone) e.attendantPhone = 'Attendant phone is required for ICU';
+    } else {
+      if (!v.broughtBy) e.broughtBy = 'Select who brought the patient';
+      if (!v.triageLevel) e.triageLevel = 'Select triage colour';
+    }
+  }
   if (v.payerType === 'INSURANCE') {
     if (isBlank(v.insurerName)) e.insurerName = 'Choose or type the insurer';
     if (isBlank(v.policyNumber)) e.policyNumber = 'Policy number is required';
@@ -171,6 +209,10 @@ export function useRegistrationForm() {
   const [summary, setSummary] = useState<TodaySummary | null>(null);
 
   const deskState: DeskState = openVisit ? 'OPEN_VISIT' : selectedPatient ? 'EXISTING' : 'NEW';
+  /** Emergency or ICU entry: no consultation fee, optional deposit, relaxed patient contact details. */
+  const isAcute = isAcuteSource(visit.source);
+  const isEmergency = visit.source === 'EMERGENCY';
+  const isIcu = visit.source === 'ICU';
 
   // ---------- master data & counters ----------
   const refreshSummary = useCallback(() => {
@@ -211,6 +253,24 @@ export function useRegistrationForm() {
       cancelled = true;
     };
   }, [visit.departmentId]);
+
+  // Emergency / ICU defaults: casualty or critical-care department (once departments are loaded)
+  // and arrival time = now. Only fills empty fields, so the receptionist can still change them.
+  useEffect(() => {
+    if (openVisit || !isAcuteSource(visit.source)) return;
+    const code = visit.source === 'ICU' ? 'ICU' : 'ER';
+    const dept = departments.find((d) => d.code === code);
+    setVisit((v) => {
+      let next = v;
+      if (dept && v.departmentId === '') next = { ...next, departmentId: dept.id, doctorId: '' };
+      if (!v.arrivalTime) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        next = { ...next, arrivalTime: now.toISOString().slice(0, 16) };
+      }
+      return next;
+    });
+  }, [visit.source, departments, openVisit]);
 
   // Fee for a NEW visit (server applies the hospital's free follow-up rule).
   const patientId = selectedPatient?.id;
@@ -263,6 +323,7 @@ export function useRegistrationForm() {
   const updatePatient = useCallback(<K extends keyof PatientInput>(field: K, value: PatientInput[K]) => {
     setPatient((p) => ({ ...p, [field]: value }));
     setNotice(null);
+    setFormError(null);
     clearError(field);
   }, []);
 
@@ -273,6 +334,7 @@ export function useRegistrationForm() {
       return next;
     });
     setNotice(null);
+    setFormError(null);
     clearError(field);
   }, []);
 
@@ -353,12 +415,12 @@ export function useRegistrationForm() {
 
   // ---------- validation ----------
   const validateAll = useCallback((): boolean => {
-    const e: FieldErrors = { ...validatePatient(patient), ...validateVisit(visit) };
+    const e: FieldErrors = { ...validatePatient(patient, isAcute), ...validateVisit(visit) };
     setErrors(e);
     const ok = Object.keys(e).length === 0;
     setFormError(ok ? null : 'Please complete the highlighted fields.');
     return ok;
-  }, [patient, visit]);
+  }, [patient, visit, isAcute]);
 
   // ---------- register a new visit ----------
   /** Payment (if any) + registration in one server call. Throws so the payment dialog can show the error. */
@@ -403,7 +465,7 @@ export function useRegistrationForm() {
   const saveChanges = useCallback(async () => {
     if (!selectedPatient) return;
     const e: FieldErrors = {
-      ...validatePatient(patient),
+      ...validatePatient(patient, isAcute),
       ...(openVisit ? validateVisit(visit) : {}),
     };
     setErrors(e);
@@ -438,7 +500,7 @@ export function useRegistrationForm() {
     } finally {
       setSaving(false);
     }
-  }, [selectedPatient, patient, openVisit, visit, patientEdited, visitEdited, refreshSummary]);
+  }, [selectedPatient, patient, openVisit, visit, patientEdited, visitEdited, refreshSummary, isAcute]);
 
   /** Put back what is saved on the server. */
   const discardChanges = useCallback(() => {
@@ -475,6 +537,9 @@ export function useRegistrationForm() {
 
   return {
     deskState,
+    isAcute,
+    isEmergency,
+    isIcu,
     patient,
     selectedPatient,
     lastVisit,

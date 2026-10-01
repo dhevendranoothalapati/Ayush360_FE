@@ -12,10 +12,20 @@ interface PaymentDialogProps {
   doctorName: string;
   onClose: () => void;
   onConfirm: (payment: PaymentInput) => Promise<unknown>;
+  /** Dialog title, e.g. "Collect advance / deposit" for Emergency / ICU. */
+  title?: string;
 }
 
 /** Collect the consultation fee. Registration is created only if this succeeds. */
-export function PaymentDialog({ open, amount, patientName, doctorName, onClose, onConfirm }: PaymentDialogProps) {
+export function PaymentDialog({
+  open,
+  amount,
+  patientName,
+  doctorName,
+  onClose,
+  onConfirm,
+  title = 'Collect consultation fee',
+}: PaymentDialogProps) {
   const [mode, setMode] = useState<PaymentMode>('CASH');
   const [reference, setReference] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +60,7 @@ export function PaymentDialog({ open, amount, patientName, doctorName, onClose, 
 
   return (
     <Modal
-      title="Collect consultation fee"
+      title={title}
       open={open}
       onClose={onClose}
       closeDisabled={submitting}

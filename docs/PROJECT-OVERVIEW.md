@@ -77,6 +77,15 @@ There is **one screen**: no New/Returning switch and no locked fields. The searc
   - A patient can have several open visits today, for example ENT and General Medicine.
   - **Today's visits** chips above Visit details list each open visit by token, department and doctor, plus **New visit**. Click a chip to load and edit that visit; switching is blocked while there are unsaved changes.
   - **Visit history (n)** under the patient strip lists all visits, newest first: date, visit ID, token, department and doctor, payer, fee (and whether it was a follow-up), and status. Open visits can be clicked to edit; past visits are read-only.
+- **Emergency and ICU entries** (visit types *Emergency* and *ICU admission*):
+  - **No consultation fee is shown or charged.** The card says "Emergency charges — billed later" or "ICU bed & care — billed per day".
+  - An optional **advance / deposit** can be collected now. It goes through the payment dialog, prints a receipt and counts in My collection; the balance is billed later.
+  - **Token series:** Emergency `E-001…` (visit `ER-…`); ICU `I-001…` (visit `ICU-…`). The department is set automatically to *Emergency / Casualty* or *Critical Care (ICU)*, and the arrival or admission time defaults to now.
+  - **Emergency details:** arrival time, **brought by** (self, relative, ambulance, police, referral, other), **triage colour** (Red/Orange/Yellow/Green), attendant name and phone.
+  - **ICU details:** admission time, **admitted from** (Emergency, OPD, ward, other hospital, direct), **ICU unit** (MICU/SICU/CCU/NICU/PICU/HDU), bed number, referring hospital. **Attendant / next of kin** name and phone are required.
+  - **MLC (medico-legal case)** for both: police station (required) and FIR/GD number. The server assigns an **MLC number** (`MLC-yyyy-nnnn`).
+  - Mobile and address are optional for unknown patients.
+  - OPD, Emergency and ICU entries can't be converted into each other.
 - **Strip above the form:** patient number, age, last visit (date and doctor), and an "Open visit today · Token" chip.
 - **New patient button:** clears the form.
 - **Free follow-up rule (hospital setting `followUpFreeDays`):** a visit to the **same doctor** within N days of the last **paid** consultation costs ₹0. The server works out the fee (`GET /registration/fee-quote`), and the card shows ₹0 with the normal fee struck through and "Free with this doctor until …". No payment dialog opens, and the receipt mode is *Free follow-up*, linked to the original visit. Free follow-ups don't restart the window. A hospital with the setting at 0 always charges.
@@ -177,3 +186,5 @@ npm run build          # boundary check + type check + production build
 | 1 Oct 2026 | Users land only on screens they can open: after login (even if the previous user was on another page) and when opening a module home they can't use (e.g. a doctor on `/registration` goes to Patient Queue) |
 | 1 Oct 2026 | "My collection" per receptionist; admins see Total collected (all desks) + their own; counters auto-refresh every 30 s; requirement noted that the backend must generate tokens atomically |
 | 1 Oct 2026 | Multiple visits per patient: Today's visits switcher (edit any open visit) and Visit history table |
+| 1 Oct 2026 | Emergency visit type: E-tokens, pay later, relaxed contact details, red emergency styling; Emergency & ICU proposal doc added |
+| 1 Oct 2026 | ICU admission entry at the front desk; Emergency/ICU show no consultation fee (charges billed later) with optional advance/deposit; triage, brought by, attendant, arrival time, MLC (auto MLC number), ICU unit/bed/admission source |

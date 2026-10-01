@@ -6,7 +6,7 @@ import type { RegistrationFormState } from '../hooks/useRegistrationForm';
 import { VisitSwitcher } from './VisitSwitcher';
 
 export function VisitDetailsForm({ form, disabled = false }: { form: RegistrationFormState; disabled?: boolean }) {
-  const { visit, errors, departments, doctors, updateVisit, loadingMasters, openVisit, visitEdited } = form;
+  const { visit, errors, departments, doctors, updateVisit, loadingMasters, openVisit, visitEdited, isAcute, isIcu } = form;
   const invalid = (f: keyof typeof errors) => (errors[f] ? true : undefined);
 
   return (
@@ -30,6 +30,20 @@ export function VisitDetailsForm({ form, disabled = false }: { form: Registratio
 
       <VisitSwitcher form={form} />
 
+      {visit.source === 'EMERGENCY' && (
+        <div className="emergency-note" role="note">
+          <strong>Emergency case</strong> — gets an E-token and is seen first. No consultation fee at the desk: emergency
+          charges go to the patient's bill (an advance can be taken below). Mobile and address can be filled in later; use
+          "Unknown" as the name if the patient cannot be identified.
+        </div>
+      )}
+      {isIcu && (
+        <div className="emergency-note icu-note" role="note">
+          <strong>ICU admission entry</strong> — records the patient's entry into the ICU. ICU bed and care charges are
+          billed per day to the patient's account; collect an advance / deposit below if your hospital requires it.
+        </div>
+      )}
+
       <fieldset className="form-grid" disabled={disabled}>
         <FormField label="Department" htmlFor="departmentId" required error={errors.departmentId}>
           <select
@@ -49,7 +63,12 @@ export function VisitDetailsForm({ form, disabled = false }: { form: Registratio
           </select>
         </FormField>
 
-        <FormField label="Doctor" htmlFor="doctorId" required error={errors.doctorId}>
+        <FormField
+          label={isIcu ? 'Admitting consultant' : isAcute ? 'Duty doctor' : 'Doctor'}
+          htmlFor="doctorId"
+          required
+          error={errors.doctorId}
+        >
           <select
             id="doctorId"
             className="select"
@@ -61,7 +80,8 @@ export function VisitDetailsForm({ form, disabled = false }: { form: Registratio
             <option value="">{visit.departmentId === '' ? 'Select department first' : 'Select doctor'}</option>
             {doctors.map((d) => (
               <option key={d.id} value={d.id}>
-                {d.name} ({formatCurrency(d.consultationFee)})
+                {/* OPD shows the consultation fee; Emergency / ICU charges are billed later. */}
+                {isAcute ? d.name : `${d.name} (${formatCurrency(d.consultationFee)})`}
               </option>
             ))}
           </select>
@@ -70,9 +90,13 @@ export function VisitDetailsForm({ form, disabled = false }: { form: Registratio
         <FormField label="Visit type" htmlFor="source" required>
           <select
             id="source"
+            data-emergency={isAcute || undefined}
             className="select"
             value={visit.source}
-            onChange={(e) => updateVisit('source', e.target.value as VisitSource)}
+            onChange={(e) => {
+              // Emergency / ICU defaults (department, arrival time) are applied by the form hook.
+              updateVisit('source', e.target.value as VisitSource);
+            }}
           >
             {VISIT_SOURCE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
@@ -82,11 +106,16 @@ export function VisitDetailsForm({ form, disabled = false }: { form: Registratio
           </select>
         </FormField>
 
-        <FormField label="Reason for visit" htmlFor="reasonForVisit" required error={errors.reasonForVisit}>
+        <FormField
+          label={isIcu ? 'Provisional diagnosis' : isAcute ? 'Chief complaint' : 'Reason for visit'}
+          htmlFor="reasonForVisit"
+          required
+          error={errors.reasonForVisit}
+        >
           <input
             id="reasonForVisit"
             className="input"
-            placeholder="e.g. General consultation"
+            placeholder={isIcu ? 'e.g. Sepsis with shock' : isAcute ? 'e.g. Road traffic accident' : 'e.g. General consultation'}
             value={visit.reasonForVisit}
             onChange={(e) => updateVisit('reasonForVisit', e.target.value)}
             aria-invalid={invalid('reasonForVisit')}
