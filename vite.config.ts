@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+      // `npm run dev:share` listens on all network addresses so colleagues on the same
+      // network / VPN (e.g. Tailscale 100.x.x.x) can open the app. Any host name is allowed
+      // so temporary tunnels work too. For testing only — not a production setting.
+      allowedHosts: true,
       // When VITE_USE_MOCK_API=false, /api calls are forwarded to the ASP.NET Core backend.
       proxy: {
         '/api': {
@@ -22,6 +26,10 @@ export default defineConfig(({ mode }) => {
           secure: false,
         },
       },
+    },
+    preview: {
+      port: 4173,
+      allowedHosts: true,
     },
   };
 });

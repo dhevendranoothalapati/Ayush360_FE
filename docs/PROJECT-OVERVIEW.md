@@ -101,16 +101,16 @@ There is **one screen**: no New/Returning switch and no locked fields. The searc
 - **Payment first:** for paid visits, the visit, receipt and token are created only after payment succeeds.
 - **Save draft:** kept in the browser session only and never added to the queue.
 
-**Record identity:** one patient number per patient (`SUN-000104`). Each visit gets its own visit number (`OP-yyyymmdd-nnnn`), token (`A-nnn`) and receipt (`RC-…`).
+**Record identity:** one patient number per patient (`SWH-000104`). Each visit gets its own visit number (`OP-yyyymmdd-nnnn`), token (`A-nnn`) and receipt (`RC-…`).
 
 **Demo data:**
 
 | Patient | Situation |
 |---|---|
-| Suresh Kumar (`9848012345`) | Saw Dr. Meera Shah 4 days ago, so a new visit to her is a **free follow-up** at Sunrise |
+| Suresh Kumar (`9848012345`) | Saw Dr. Meera Shah 4 days ago, so a new visit to her is a **free follow-up** at Swetha |
 | Ananya Rao | Last visit was 45 days ago, so the normal fee applies |
 
-**Hospital settings:** Sunrise `followUpFreeDays = 10`; Green Valley `0` (always charges).
+**Hospital settings:** Swetha `followUpFreeDays = 10`; Green Valley `0` (always charges).
 
 ---
 
@@ -120,12 +120,12 @@ The password for every account is `demo123`. Usernames are case-insensitive.
 
 | Username | Name | Role | Hospital | Modules visible |
 |---|---|---|---|---|
-| `dev` | Devendra N | Receptionist | Sunrise Multispeciality (10) | Front Desk, Billing |
+| `dev` | Devendra N | Receptionist | Swetha Multispeciality (10) | Front Desk, Billing |
 | `hari` | Hari | Receptionist | Green Valley (20) | Front Desk only (the hospital has bought Front Desk and Doctor) |
-| `priya` | Priya | Admin | Sunrise (10) | All modules |
-| `sriya` | Dr. Sriya | Doctor | Sunrise (10) | Patient Queue, Doctor, Lab |
+| `priya` | Priya | Admin | Swetha (10) | All modules |
+| `sriya` | Dr. Sriya | Doctor | Swetha (10) | Patient Queue, Doctor, Lab |
 
-**Hospital licences in the mock:** Sunrise has all 7 modules. Green Valley has Front Desk and Doctor only.
+**Hospital licences in the mock:** Swetha has all 7 modules. Green Valley has Front Desk and Doctor only.
 
 ---
 

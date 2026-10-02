@@ -41,7 +41,7 @@ export interface MockDb {
   sequences: Record<string, number>;
 }
 
-const STORAGE_KEY = 'ayush360.mockdb.v9';
+const STORAGE_KEY = 'ayush360.mockdb.v10';
 
 function iso(daysAgo = 0): string {
   const d = new Date();
@@ -149,7 +149,7 @@ function seed(): MockDb {
   );
 
   const doctors: Tenanted<Doctor>[] = [
-    // Sunrise (tenant 10)
+    // Swetha (tenant 10)
     { tenantId: 10, id: 1001, name: 'Dr. Meera Shah', departmentId: 1001, qualification: 'MBBS, MD', consultationFee: 500 },
     { tenantId: 10, id: 1002, name: 'Dr. Anil Kapoor', departmentId: 1001, qualification: 'MBBS', consultationFee: 400 },
     { tenantId: 10, id: 1003, name: 'Dr. Vikram Iyer', departmentId: 1002, qualification: 'MD, DM Cardiology', consultationFee: 900 },
@@ -171,18 +171,18 @@ function seed(): MockDb {
   ];
 
   const patients: Tenanted<Patient>[] = [
-    seedPatient(10, 1, 'SUN-000101', {
+    seedPatient(10, 1, 'SWH-000101', {
       firstName: 'Ananya', lastName: 'Rao', gender: 'FEMALE', mobileNumber: '9876543210',
       dateOfBirth: '1992-04-18', bloodGroup: 'B+', addressLine1: 'Plot 12, Jubilee Hills',
       city: 'Hyderabad', state: 'Telangana', postalCode: '500033',
     }, 45),
-    seedPatient(10, 2, 'SUN-000102', {
+    seedPatient(10, 2, 'SWH-000102', {
       firstName: 'Suresh', lastName: 'Kumar', gender: 'MALE', mobileNumber: '9848012345',
       dateOfBirth: '1968-11-02', bloodGroup: 'O+', addressLine1: '4-56 Kukatpally',
       city: 'Hyderabad', state: 'Telangana', postalCode: '500072',
       emergencyContactName: 'Ramesh Kumar', emergencyContactPhone: '9848098480',
     }, 4),
-    seedPatient(10, 3, 'SUN-000103', {
+    seedPatient(10, 3, 'SWH-000103', {
       firstName: 'Lakshmi', lastName: 'Devi', gender: 'FEMALE', mobileNumber: '9123456780',
       dateOfBirth: '1955-06-25', addressLine1: 'Secunderabad', city: 'Hyderabad', state: 'Telangana',
     }, null),
@@ -199,7 +199,7 @@ function seed(): MockDb {
   return {
     tenants: [
       {
-        id: 10, code: 'SUN', name: 'Sunrise Multispeciality Hospital', city: 'Hyderabad',
+        id: 10, code: 'SWH', name: 'Swetha Multispeciality Hospital', city: 'Hyderabad',
         followUpFreeDays: 10,
         // Bought every module
         enabledModules: [
@@ -236,7 +236,7 @@ function seed(): MockDb {
     doctors,
     patients,
     // Past (closed) visits so the follow-up rule can be tried:
-    //  - Suresh Kumar saw Dr. Meera Shah 4 days ago  -> revisit to her today is FREE (Sunrise: 10-day window)
+    //  - Suresh Kumar saw Dr. Meera Shah 4 days ago  -> revisit to her today is FREE (Swetha: 10-day window)
     //  - Ananya Rao saw Dr. Meera Shah 45 days ago    -> normal fee
     //  - Arjun Nair (Green Valley) 3 days ago         -> normal fee (window disabled there)
     registrations: [

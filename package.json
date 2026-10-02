@@ -6,9 +6,11 @@
   "description": "Ayush360 Hospital Management System - React + TypeScript frontend (Front Desk / Patient Registration first)",
   "scripts": {
     "dev": "vite",
+    "dev:share": "vite --host",
     "build": "npm run check:boundaries && tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
+    "preview:share": "vite build && vite preview --host --port 4173",
     "check:boundaries": "node scripts/check-module-boundaries.mjs"
   },
   "dependencies": {

@@ -26,12 +26,25 @@ The mock API is on by default (`VITE_USE_MOCK_API=true`). Sign in with one of th
 | `priya` | Admin | Swetha (10). Sees every module |
 | `sriya` | Doctor | Swetha (10). Can't open Registration |
 
-Seeded patients to try in the search: `9876543210`, `SUN-000102` and `Ananya`. Each hospital only sees its own patients.
+Seeded patients to try in the search: `9876543210`, `SWH-000102` and `Ananya`. Each hospital only sees its own patients.
 Suresh Kumar (`9848012345`) saw Dr. Meera Shah 4 days ago, so a new visit to her at Swetha is a **free follow-up** (10-day window).
 To simulate a declined payment, choose UPI or Card and enter `0000` as the reference.
 To reset the mock data, run `resetMockDb()` in the browser console.
 
 Scripts: `npm run dev`, `npm run build`, `npm run typecheck`, `npm run check:boundaries`, `npm run preview`.
+
+## Sharing a test build
+
+| Who should open it | How |
+|---|---|
+| Same office Wi-Fi / LAN, or a VPN such as Tailscale (`100.x.x.x`) | `npm run dev:share`, then share the **Network** address it prints, e.g. `http://100.101.x.x:5173` |
+| Same, but a faster build without live reload | `npm run preview:share`, then share `http://<your-ip>:4173` |
+| Anyone on the internet | `npm run build`, then drag the `dist` folder onto https://app.netlify.com/drop (`public/_redirects` keeps page links working) |
+
+Notes:
+- The mock API keeps data **in each tester's own browser**, so testers don't see each other's patients.
+- Windows asks to allow Node.js through the firewall the first time; allow it on **Private** networks.
+- Keep your PC on while others are testing (first two options).
 
 ## Sellable modules
 
@@ -94,7 +107,7 @@ scripts/check-module-boundaries.mjs
 - **Frontend hiding is UX only.** The sidebar and routes are filtered by tenant module licensing and by user permissions, but the backend has to re-check everything.
 - **Payment before registration:** "Registration" first validates the form, then opens *Collect consultation fee*. One API call (`POST /registration/registrations`) takes the payment and creates the visit, receipt and token. If the payment fails, nothing is created.
 - **Save draft** is stored in this browser session only. It never creates a queue entry.
-- **Patient master vs visit:** one patient (`patientNumber`, e.g. `SUN-000104`) can have many visits. Each visit gets its own `OP-yyyymmdd-nnnn`, token `A-nnn` and receipt.
+- **Patient master vs visit:** one patient (`patientNumber`, e.g. `SWH-000104`) can have many visits. Each visit gets its own `OP-yyyymmdd-nnnn`, token `A-nnn` and receipt.
 - **Today's visit card:** shows Unpaid until payment succeeds, then Paid with the token and the *Waiting* status.
 - Every request sends an `X-Correlation-ID` header for tracing.
 
