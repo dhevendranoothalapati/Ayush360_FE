@@ -1,0 +1,77 @@
+# Ayush360 web server (Nginx). ${IDENTITY_API_URL} and ${HMS_API_URL} are filled in when the container starts.
+#
+#   /                 React app (index.html for every app route, so deep links and refresh work)
+#   /assets/*         hashed JS/CSS from Vite: cached for a year
+#   /api/auth/*       -> Identity API (login, refresh, logout, me)
+#   /api/*            -> HMS API (front desk, doctor, ...)
+#   /healthz          liveness probe for this container
+
+# Keep https as the scheme the APIs see when Azure's ingress terminated TLS in front of us.
+map $http_x_forwarded_proto $forwarded_proto {
+    default $http_x_forwarded_proto;
+    ""      $scheme;
+}
+
+server {
+    listen 8080;
+    server_name _;
+    server_tokens off;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Real client IP (for the APIs' rate limits and logs) when we sit behind Azure ingress or another proxy
+    # on a private network. A browser can't fake it: only private-range proxies are trusted.
+    set_real_ip_from 10.0.0.0/8;
+    set_real_ip_from 172.16.0.0/12;
+    set_real_ip_from 192.168.0.0/16;
+    set_real_ip_from 100.64.0.0/10;
+    real_ip_header X-Forwarded-For;
+    real_ip_recursive on;
+
+    client_max_body_size 10m;
+
+    gzip on;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+    proxy_http_version 1.1;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $forwarded_proto;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header Connection "";
+    proxy_ssl_server_name on;   # SNI for https upstreams (Azure Container Apps internal FQDNs)
+    proxy_connect_timeout 10s;
+    proxy_read_timeout 60s;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok";
+    }
+
+    location /api/auth/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-store" always;
+        proxy_pass ${IDENTITY_API_URL};
+    }
+
+    location /api/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-store" always;
+        proxy_pass ${HMS_API_URL};
+    }
+
+    location /assets/ {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        include /etc/nginx/snippets/security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri $uri/ /index.html;
+    }
+}

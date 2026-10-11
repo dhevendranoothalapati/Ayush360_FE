@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.vite
+coverage
+*.log
+# Local settings must never end up in an image (they point at the mock / localhost).
+.env
+.env.local
+.env.*.local
+Claude outputs
+docs
