@@ -1771,3 +1771,26 @@
 .fq-eta-away {
   color: #b26a00;
 }
+
+/* Today's visits the doctor has already seen: shown, but read-only */
+.vs-chip.vs-closed {
+  cursor: default;
+  background: var(--surface-2);
+  border-style: dashed;
+  color: var(--muted);
+}
+.vs-chip.vs-closed:hover {
+  border-color: var(--border);
+}
+.vs-chip.vs-closed strong {
+  color: var(--muted);
+}
+.vs-status {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--green-50);
+  color: var(--green);
+}
