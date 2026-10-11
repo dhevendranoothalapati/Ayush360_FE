@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { IdleSignOut } from '@/core/authentication/IdleSignOut';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import './layout.css';
@@ -17,6 +18,7 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+      <IdleSignOut />
     </div>
   );
 }

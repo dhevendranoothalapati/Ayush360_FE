@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { canOpenPath } from '@/core/modules/registry';
 import { env } from '@/core/config/env';
-import { ApiError } from '@/core/api/httpClient';
+import { ApiError, signOutNotice } from '@/core/api/httpClient';
 import { BrandMark, Icon, type IconName } from '@/shared/components/Icons';
 
 const SHOWCASE_POINTS: { title: string; text: string; icon: IconName; accent: string }[] = [
@@ -22,6 +22,8 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Why the user landed here (session expired, inactivity); shown once.
+  const [notice] = useState(() => signOutNotice.take());
   const [submitting, setSubmitting] = useState(false);
 
   // Go back to the page the user wanted only if this user may open it (e.g. after a
@@ -108,6 +110,11 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
+          {notice && !error && (
+            <div className="alert alert-info" role="status">
+              {notice}
+            </div>
+          )}
           {error && (
             <div className="alert alert-error" role="alert">
               {error}

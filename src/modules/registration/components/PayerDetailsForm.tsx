@@ -76,6 +76,7 @@ export function PayerDetailsForm({ form, disabled = false }: { form: Registratio
                   value={visit.insurerName}
                   onChange={(e) => updateVisit('insurerName', e.target.value)}
                   aria-invalid={invalid('insurerName')}
+                  maxLength={100}
                 />
                 <datalist id="insurer-options">
                   {INSURER_SUGGESTIONS.map((name) => (
@@ -90,6 +91,7 @@ export function PayerDetailsForm({ form, disabled = false }: { form: Registratio
                   placeholder="e.g. Medi Assist"
                   value={visit.tpaName}
                   onChange={(e) => updateVisit('tpaName', e.target.value)}
+                  maxLength={100}
                 />
               </FormField>
               <FormField label="Policy number" htmlFor="policyNumber" required error={errors.policyNumber}>
@@ -99,6 +101,7 @@ export function PayerDetailsForm({ form, disabled = false }: { form: Registratio
                   value={visit.policyNumber}
                   onChange={(e) => updateVisit('policyNumber', e.target.value.toUpperCase())}
                   aria-invalid={invalid('policyNumber')}
+                  maxLength={50}
                 />
               </FormField>
               <FormField label="Member / card ID" htmlFor="memberId">
@@ -107,6 +110,7 @@ export function PayerDetailsForm({ form, disabled = false }: { form: Registratio
                   className="input"
                   value={visit.memberId}
                   onChange={(e) => updateVisit('memberId', e.target.value.toUpperCase())}
+                  maxLength={50}
                 />
               </FormField>
               <FormField label="Policy holder name" htmlFor="policyHolderName" required error={errors.policyHolderName}>
@@ -116,6 +120,7 @@ export function PayerDetailsForm({ form, disabled = false }: { form: Registratio
                   value={visit.policyHolderName}
                   onChange={(e) => updateVisit('policyHolderName', e.target.value)}
                   aria-invalid={invalid('policyHolderName')}
+                  maxLength={100}
                 />
               </FormField>
               <div className="split-two">

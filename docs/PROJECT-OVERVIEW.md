@@ -46,7 +46,7 @@ src/
 | 1 | Front Desk (`REGISTRATION`) | Registration | ✅ Done |
 | | | OPD Queue, Visit Details, Active Inpatients, Beds and Rooms, Inpatient Details | ⏳ Next |
 | 2 | Billing and Discharge (`BILLING`) | Inpatient Billing, Discharge | Placeholder |
-| 3 | Doctor (`DOCTOR`) | OPD queue, consultation, prescriptions, lab orders | Placeholder |
+| 3 | Doctor (`DOCTOR`) | My Patients (own queue), consultation, prescription + print, lab orders, admission request | ✅ First version (11 Oct 2026) |
 | 4 | Nursing (`NURSE`) | Vitals, nursing notes, bed cleaning | Placeholder |
 | 5 | Pharmacy (`PHARMACY`) | Dispensing, returns, inventory | Placeholder |
 | 6 | Laboratory (`LAB`) | Orders, samples, results | Placeholder |
@@ -120,10 +120,10 @@ The password for every account is `demo123`. Usernames are case-insensitive.
 
 | Username | Name | Role | Hospital | Modules visible |
 |---|---|---|---|---|
-| `dev` | Devendra N | Receptionist | Swetha Multispeciality (10) | Front Desk, Billing |
-| `hari` | Hari | Receptionist | Green Valley (20) | Front Desk only (the hospital has bought Front Desk and Doctor) |
-| `priya` | Priya | Admin | Swetha (10) | All modules |
-| `sriya` | Dr. Sriya | Doctor | Swetha (10) | Patient Queue, Doctor, Lab |
+| `DN10110` | Devendra N | Receptionist | Swetha Multispeciality (10) | Front Desk, Billing |
+| `HA10120` | Hari | Receptionist | Green Valley (20) | Front Desk only (the hospital has bought Front Desk and Doctor) |
+| `PS10210` | Priya Sharma | Admin | Swetha (10) | All modules |
+| `SR10310` | Dr. Sriya Reddy | Doctor | Swetha (10) | Patient Queue, Doctor, Lab |
 
 **Hospital licences in the mock:** Swetha has all 7 modules. Green Valley has Front Desk and Doctor only.
 
@@ -147,7 +147,13 @@ All endpoints are under `/api` and use a Bearer token. The tenant is resolved on
 | GET | `/registration/patients/{id}/context` | Patient + `openVisits[]` (all of today's open visits with receipts) + `visits[]` (history, newest first, latest 20) + `lastVisit` |
 | GET | `/registration/fee-quote?doctorId=&patientId=` | Fee to collect now; applies the free follow-up rule |
 | POST | `/registration/registrations` | Payment (omitted when the fee is 0) plus registration in one call. `{ patient }` = new patient; `{ patientId }` = existing; `{ patientId, patient }` also updates details. 409 if an open visit with that doctor already exists today |
-| PUT | `/registration/registrations/{id}` | Edit an open visit (department, doctor, type, reason, consent). 409 if closed, or if the fee would change |
+| PUT | `/registration/registrations/{id}` | Edit an open visit (department, doctor, type, reason, consent). Open = today and still **Waiting**. 409 if closed, or if the fee would change |
+| GET | `/doctor/queue?date=` | Day's patients: doctors get only their own (`isDoctor: true`); admins see all, view only. `counts` + `items[]` |
+| GET | `/doctor/visits/{visitId}` | Patient, visit, doctor, `encounter` (null until started), `canStart`, `canEdit`, `history[]` (earlier consultations) |
+| POST | `/doctor/visits/{visitId}/start` | Start consultation (own patient, today, Waiting) → visit becomes `IN_CONSULTATION` (locked at the desk) |
+| PUT | `/doctor/encounters/{id}` | Save (draft) the whole consultation: notes, `vitals`, `diagnoses[]`, `prescriptions[]` (needs `PRESCRIPTION_CREATE`), `labOrders[]`, follow-up, admission |
+| POST | `/doctor/encounters/{id}/complete` | Save + complete: needs chief complaints and ≥1 diagnosis; visit → `COMPLETED` or `ADMISSION_REQUESTED`; read-only afterwards |
+| GET | `/doctor/icd10?search=` · `/doctor/medicines?search=` · `/doctor/lab-tests?search=` | Pick lists (ICD-10 starter list, hospital medicine list, tests); free text is always allowed |
 
 - **Errors:** `400 { message, errors: { field: message } }` for validation; `401` when signed out; `403` when not allowed.
 - **Headers:** every request sends `X-Correlation-ID`.
@@ -177,6 +183,7 @@ npm run build          # boundary check + type check + production build
 | 1 Oct 2026 | Project created: core shell, login, mock API, Front Desk Patient Registration |
 | 1 Oct 2026 | Sellable-module architecture: manifests, registry, licence checks, Billing split out, Lab and Payroll added, boundary check |
 | 1 Oct 2026 | Login page simplified (demo panel removed); usernames changed to `dev`, `hari`, `priya`, `sriya` |
+| 4 Oct 2026 | Usernames follow the backend rule (initials + user code + hospital id): `DN10110`, `PS10210`, `SR10310`, `HA10120`. `VITE_USE_REAL_AUTH=true` signs in through the real Identity API while the rest still uses the mock |
 | 1 Oct 2026 | Visual refresh: colourful sidebar on the page background with a colour per module and a licence card; split-screen login with product highlights; Front Desk welcome banner with today's counts (registered, waiting, new patients, fee collected); 4-step progress bar (Patient → Visit → Payment → Token); token "ticket" after payment; Plus Jakarta Sans font |
 | 1 Oct 2026 | Returning patients open in the editable registration form, with a strip showing patient number, last visit and an "Edited" flag; the banner subtitle was removed |
 | 1 Oct 2026 | Patient details can be corrected without a new visit: **Edit details** after registering, or **Save details only** for a returning patient (`PUT /registration/patients/{id}`) |
@@ -188,3 +195,6 @@ npm run build          # boundary check + type check + production build
 | 1 Oct 2026 | Multiple visits per patient: Today's visits switcher (edit any open visit) and Visit history table |
 | 1 Oct 2026 | Emergency visit type: E-tokens, pay later, relaxed contact details, red emergency styling; Emergency & ICU proposal doc added |
 | 1 Oct 2026 | ICU admission entry at the front desk; Emergency/ICU show no consultation fee (charges billed later) with optional advance/deposit; triage, brought by, attendant, arrival time, MLC (auto MLC number), ICU unit/bed/admission source |
+| 11 Oct 2026 | State is a dropdown of all states/UTs (default Andhra Pradesh); optional Aadhaar (encrypted on the server, shown as XXXX XXXX 1234, searchable, duplicate check, never kept in drafts) |
+| 11 Oct 2026 | Front desk can edit a visit only while the patient is Waiting (read-only once with the doctor) |
+| 11 Oct 2026 | Doctor module: My Patients queue (own patients, next patient, filters, 30 s refresh); consultation with vitals (BMI), complaints/history/allergies (carried forward), examination, ICD-10 diagnosis (primary), prescription (medicine list + free text, dose/frequency/timing/days), lab tests, advice + review date, admission request; save / complete; A5 printed prescription; previous consultations panel. Mock DB v12 adds Dr. Sriya Reddy (SR10310) as a General Medicine doctor |

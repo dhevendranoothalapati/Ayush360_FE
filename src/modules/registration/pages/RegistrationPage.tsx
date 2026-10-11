@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Icon } from '@/shared/components/Icons';
 import { formatTime, fullName } from '@/shared/utils/format';
 import { PatientSearch } from '../components/PatientSearch';
@@ -12,6 +13,7 @@ import { PayerDetailsForm } from '../components/PayerDetailsForm';
 import { RegistrationReceipt } from '../components/RegistrationReceipt';
 import { AcuteDetailsForm } from '../components/AcuteDetailsForm';
 import { useRegistrationForm } from '../hooks/useRegistrationForm';
+import type { Patient } from '../types';
 import '../registration.css';
 
 /**
@@ -23,6 +25,17 @@ export default function RegistrationPage() {
   const [payOpen, setPayOpen] = useState(false);
   const { result, patient, selectedDoctor, deskState, feeQuote, openVisit } = form;
   const dirty = form.patientEdited || form.visitEdited;
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Opened from the Patient queue: load that patient (and today's visit) straight away.
+  const openPatientId = (location.state as { patientId?: number } | null)?.patientId;
+  useEffect(() => {
+    if (!openPatientId) return;
+    navigate(location.pathname, { replace: true, state: null }); // so a page reload doesn't load it again
+    void form.selectPatient({ id: openPatientId } as Patient); // only the id is used
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPatientId]);
 
   // Bring the success banner and token into view after a registration.
   useEffect(() => {

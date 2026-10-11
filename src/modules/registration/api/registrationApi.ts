@@ -5,6 +5,8 @@ import type {
   Department,
   Doctor,
   FeeQuote,
+  FrontDeskQueue,
+  InpatientList,
   Patient,
   PatientContext,
   PatientInput,
@@ -49,6 +51,12 @@ export const registrationApi = {
   /** Edit an open visit (department, doctor, visit type, reason, consent). No new charge. */
   updateVisit: (registrationId: number, visit: VisitInput) =>
     http.put<Registration>(`/registration/registrations/${registrationId}`, visit),
+
+  /** Everyone registered for a day (all doctors) with their latest status. date = yyyy-mm-dd, default today. */
+  getQueue: (date?: string) => http.get<FrontDeskQueue>('/registration/queue', { date }),
+
+  /** Everyone currently admitted (any admission date) + patients the doctor asked to admit. */
+  getInpatients: () => http.get<InpatientList>('/registration/inpatients'),
 
   /** Today's counters for the front desk header. */
   getTodaySummary: () => http.get<TodaySummary>('/registration/registrations/summary'),

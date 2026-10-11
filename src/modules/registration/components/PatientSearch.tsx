@@ -73,7 +73,7 @@ export function PatientSearch({ onSelect, disabled }: PatientSearchProps) {
         <Icon name="search" size={20} />
         <input
           type="search"
-          placeholder="Search by patient ID, mobile number or name"
+          placeholder="Search by patient ID, mobile, Aadhaar or name"
           value={term}
           disabled={disabled}
           onChange={(e) => {

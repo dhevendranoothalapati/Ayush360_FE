@@ -116,6 +116,7 @@ export function AcuteDetailsForm({ form, disabled = false }: { form: Registratio
                   placeholder="e.g. MICU-04"
                   value={visit.bedNumber}
                   onChange={(e) => updateVisit('bedNumber', e.target.value.toUpperCase())}
+                  maxLength={20}
                 />
               </FormField>
             </div>
@@ -126,6 +127,7 @@ export function AcuteDetailsForm({ form, disabled = false }: { form: Registratio
                   className="input"
                   value={visit.referredFrom}
                   onChange={(e) => updateVisit('referredFrom', e.target.value)}
+                  maxLength={150}
                 />
               </FormField>
             ) : (
@@ -171,6 +173,7 @@ export function AcuteDetailsForm({ form, disabled = false }: { form: Registratio
             value={visit.attendantName}
             onChange={(e) => updateVisit('attendantName', e.target.value)}
             aria-invalid={invalid('attendantName')}
+            maxLength={100}
           />
         </FormField>
         <FormField label="Attendant phone" htmlFor="attendantPhone" required={isIcu} error={errors.attendantPhone}>
@@ -206,6 +209,7 @@ export function AcuteDetailsForm({ form, disabled = false }: { form: Registratio
                 value={visit.policeStation}
                 onChange={(e) => updateVisit('policeStation', e.target.value)}
                 aria-invalid={invalid('policeStation')}
+                maxLength={150}
               />
             </FormField>
             <FormField label="FIR / GD / intimation no." htmlFor="firNumber" hint="Can be added later">
@@ -214,6 +218,7 @@ export function AcuteDetailsForm({ form, disabled = false }: { form: Registratio
                 className="input"
                 value={visit.firNumber}
                 onChange={(e) => updateVisit('firNumber', e.target.value.toUpperCase())}
+                maxLength={50}
               />
             </FormField>
           </>

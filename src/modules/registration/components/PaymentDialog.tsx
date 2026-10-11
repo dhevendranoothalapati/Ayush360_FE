@@ -125,6 +125,7 @@ export function PaymentDialog({
             value={reference}
             onChange={(e) => setReference(e.target.value)}
             disabled={submitting}
+            maxLength={60}
             autoFocus
           />
         </FormField>

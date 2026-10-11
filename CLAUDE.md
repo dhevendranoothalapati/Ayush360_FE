@@ -21,7 +21,7 @@ npm run typecheck         # tsc only
 npm run check:boundaries  # module import rules (scripts/check-module-boundaries.mjs)
 ```
 
-Demo logins (mock, password `demo123`, usernames case-insensitive): `dev`, `hari`, `priya`, `sriya`.
+Demo logins (mock, password `demo123`, usernames case-insensitive): `DN10110`, `HA10120`, `PS10210`, `SR10310`.
 Reset mock data: run `resetMockDb()` in the browser console. Bump `STORAGE_KEY` in `src/mock/mockDb.ts`
 whenever seed data or stored shapes change.
 

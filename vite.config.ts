@@ -18,10 +18,18 @@ export default defineConfig(({ mode }) => {
       // network / VPN (e.g. Tailscale 100.x.x.x) can open the app. Any host name is allowed
       // so temporary tunnels work too. For testing only — not a production setting.
       allowedHosts: true,
-      // When VITE_USE_MOCK_API=false, /api calls are forwarded to the ASP.NET Core backend.
+      // Real backends (used when VITE_USE_MOCK_API=false, and for sign-in when VITE_USE_REAL_AUTH=true):
+      //   /api/auth/*  -> Identity API (login, refresh, logout, me)
+      //   /api/*       -> HMS API (Front Desk and other modules)
+      // '/api/auth' must stay first so it wins over '/api'.
       proxy: {
+        '/api/auth': {
+          target: env.VITE_IDENTITY_API_TARGET || 'http://localhost:5077',
+          changeOrigin: true,
+          secure: false,
+        },
         '/api': {
-          target: env.VITE_API_PROXY_TARGET || 'https://localhost:5001',
+          target: env.VITE_API_PROXY_TARGET || 'http://localhost:5041',
           changeOrigin: true,
           secure: false,
         },

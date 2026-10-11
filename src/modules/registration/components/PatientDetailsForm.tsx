@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { FormField } from '@/shared/components/FormField';
 import { Icon } from '@/shared/components/Icons';
 import { ageFromDob, formatDateTime } from '@/shared/utils/format';
-import { digitsOnly } from '@/shared/utils/validation';
+import { INDIAN_STATES } from '@/shared/utils/indianStates';
+import { digitsOnly, formatAadhaar } from '@/shared/utils/validation';
 import { BLOOD_GROUPS, GENDER_OPTIONS, type BloodGroup, type Gender } from '../types';
 import type { RegistrationFormState } from '../hooks/useRegistrationForm';
 import { VisitHistory } from './VisitHistory';
@@ -26,13 +27,17 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
     const p = selectedPatient;
     setShowMore(
       Boolean(
-        p.middleName || p.dateOfBirth || p.email || p.bloodGroup || p.addressLine2 || p.city || p.state ||
+        p.middleName || p.dateOfBirth || p.email || p.bloodGroup || p.addressLine2 || p.city ||
           p.postalCode || p.emergencyContactName || p.emergencyContactPhone,
       ),
     );
   }, [selectedPatient]);
 
   const age = selectedPatient ? ageFromDob(selectedPatient.dateOfBirth) : null;
+  const aadhaarOnFile = selectedPatient?.aadhaarMasked || '';
+  // A saved patient may have an older free-text state that isn't in the list: keep it selectable.
+  const stateOptions =
+    patient.state && !INDIAN_STATES.includes(patient.state) ? [patient.state, ...INDIAN_STATES] : INDIAN_STATES;
 
   // Age and date of birth are one value: typing an age stores an estimated DOB (same day, N years ago).
   const exactDob = Boolean(patient.dateOfBirth) && !patient.dobEstimated;
@@ -182,6 +187,33 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
             </div>
           </FormField>
           <FormField
+            label="Aadhaar number"
+            htmlFor="aadhaarNumber"
+            error={errors.aadhaarNumber}
+            hint={aadhaarOnFile && !patient.aadhaarNumber ? `On file: ${aadhaarOnFile} — type a new number to replace it` : undefined}
+          >
+            <input
+              id="aadhaarNumber"
+              className="input"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder={aadhaarOnFile || '12-digit Aadhaar number (optional)'}
+              value={formatAadhaar(patient.aadhaarNumber)}
+              onChange={(e) => updatePatient('aadhaarNumber', digitsOnly(e.target.value, 12))}
+              aria-invalid={invalid('aadhaarNumber')}
+            />
+          </FormField>
+          <FormField label="State" htmlFor="state">
+            <select id="state" className="select" value={patient.state} onChange={(e) => updatePatient('state', e.target.value)}>
+              <option value="">Select state</option>
+              {stateOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField
             label="Address"
             htmlFor="addressLine1"
             required={!form.isAcute}
@@ -195,7 +227,7 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
               value={patient.addressLine1}
               onChange={(e) => updatePatient('addressLine1', e.target.value)}
               aria-invalid={invalid('addressLine1')}
-              maxLength={250}
+              maxLength={200}
             />
           </FormField>
 
@@ -247,6 +279,7 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
                   className="input"
                   value={patient.email}
                   onChange={(e) => updatePatient('email', e.target.value)}
+                  maxLength={150}
                   aria-invalid={invalid('email')}
                 />
               </FormField>
@@ -271,13 +304,17 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
                   className="input"
                   value={patient.addressLine2}
                   onChange={(e) => updatePatient('addressLine2', e.target.value)}
+                  maxLength={200}
                 />
               </FormField>
               <FormField label="City" htmlFor="city">
-                <input id="city" className="input" value={patient.city} onChange={(e) => updatePatient('city', e.target.value)} />
-              </FormField>
-              <FormField label="State" htmlFor="state">
-                <input id="state" className="input" value={patient.state} onChange={(e) => updatePatient('state', e.target.value)} />
+                <input
+                  id="city"
+                  className="input"
+                  value={patient.city}
+                  onChange={(e) => updatePatient('city', e.target.value)}
+                  maxLength={100}
+                />
               </FormField>
               <FormField label="PIN code" htmlFor="postalCode" error={errors.postalCode}>
                 <input
@@ -289,13 +326,13 @@ export function PatientDetailsForm({ form, disabled = false }: { form: Registrat
                   aria-invalid={invalid('postalCode')}
                 />
               </FormField>
-              <div />
               <FormField label="Emergency contact name" htmlFor="emergencyContactName">
                 <input
                   id="emergencyContactName"
                   className="input"
                   value={patient.emergencyContactName}
                   onChange={(e) => updatePatient('emergencyContactName', e.target.value)}
+                  maxLength={150}
                 />
               </FormField>
               <FormField label="Emergency contact phone" htmlFor="emergencyContactPhone" error={errors.emergencyContactPhone}>

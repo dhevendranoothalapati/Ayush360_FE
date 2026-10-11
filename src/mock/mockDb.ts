@@ -4,9 +4,11 @@
  * survives a page refresh. Every tenant-owned row carries tenantId, exactly
  * like the real tables — the mock server filters on it.
  */
+import type { AwayReason } from '@/shared/utils/doctorAvailability';
 import { Modules, Permissions, type ModuleCode, type Permission } from '@/core/permissions/permissions';
 import type { Department, Doctor, Patient, PayerFields, Receipt, Registration } from '@/modules/registration/types';
 import { EMPTY_ACUTE } from '@/modules/registration/types';
+import type { Encounter } from '@/modules/doctor/types';
 
 export interface DbTenant {
   id: number;
@@ -27,21 +29,35 @@ export interface DbUser {
   status: 'ACTIVE' | 'INACTIVE';
 }
 export type Tenanted<T> = T & { tenantId: number };
+/** doctor.encounters (+ its diagnoses, prescription lines and lab orders, kept inline in the mock). */
+export type MockEncounter = Tenanted<Encounter & { visitId: number; patientId: number; doctorId: number }>;
 
 export interface MockDb {
   tenants: DbTenant[];
   users: DbUser[];
   rolePermissions: Record<string, Permission[]>;
   departments: Tenanted<Department>[];
-  doctors: Tenanted<Doctor>[];
+  /** userId links a doctor profile to its login (hospital.doctors.user_id). */
+  doctors: Tenanted<Doctor & { userId?: number }>[];
   patients: Tenanted<Patient>[];
   registrations: Tenanted<Registration>[];
   receipts: Tenanted<Receipt & { registrationId: number; collectedByUserId?: number }>[];
+  encounters: MockEncounter[];
+  /** doctor.doctor_breaks: "Pause patients" (optional so stored demo data from earlier versions still loads). */
+  doctorBreaks?: {
+    tenantId: number;
+    doctorId: number;
+    reason: AwayReason;
+    note: string;
+    startedAt: string;
+    expectedBackAt: string | null;
+    endedAt: string | null;
+  }[];
   sessions: Record<string, number>; // token -> userId
   sequences: Record<string, number>;
 }
 
-const STORAGE_KEY = 'ayush360.mockdb.v10';
+const STORAGE_KEY = 'ayush360.mockdb.v13';
 
 function iso(daysAgo = 0): string {
   const d = new Date();
@@ -71,6 +87,8 @@ function seedPatient(
     emergencyContactName: '',
     emergencyContactPhone: '',
     dobEstimated: false,
+    aadhaarNumber: '',
+    aadhaarMasked: '',
     status: 'ACTIVE',
     createdAt: iso(120),
     updatedAt: iso(30),
@@ -148,8 +166,9 @@ function seed(): MockDb {
     deptNames.forEach(([code, name], i) => departments.push({ tenantId, id: tenantId * 100 + i + 1, code, name })),
   );
 
-  const doctors: Tenanted<Doctor>[] = [
+  const doctors: Tenanted<Doctor & { userId?: number }>[] = [
     // Swetha (tenant 10)
+    { tenantId: 10, id: 1012, userId: 102, name: 'Dr. Sriya Reddy', departmentId: 1001, qualification: 'MBBS, MD (General Medicine)', consultationFee: 500 },
     { tenantId: 10, id: 1001, name: 'Dr. Meera Shah', departmentId: 1001, qualification: 'MBBS, MD', consultationFee: 500 },
     { tenantId: 10, id: 1002, name: 'Dr. Anil Kapoor', departmentId: 1001, qualification: 'MBBS', consultationFee: 400 },
     { tenantId: 10, id: 1003, name: 'Dr. Vikram Iyer', departmentId: 1002, qualification: 'MD, DM Cardiology', consultationFee: 900 },
@@ -215,10 +234,10 @@ function seed(): MockDb {
       },
     ],
     users: [
-      { id: 101, tenantId: 10, username: 'dev', displayName: 'Devendra N', email: 'dev@sunrise.example', roles: ['Receptionist'], status: 'ACTIVE' },
-      { id: 102, tenantId: 10, username: 'sriya', displayName: 'Dr. Sriya', email: 'sriya@sunrise.example', roles: ['Doctor'], status: 'ACTIVE' },
-      { id: 103, tenantId: 10, username: 'priya', displayName: 'Priya', email: 'priya@sunrise.example', roles: ['Admin'], status: 'ACTIVE' },
-      { id: 201, tenantId: 20, username: 'hari', displayName: 'Hari', email: 'hari@greenvalley.example', roles: ['Receptionist'], status: 'ACTIVE' },
+      { id: 101, tenantId: 10, username: 'DN10110', displayName: 'Devendra N', email: 'dev@swetha.example', roles: ['Receptionist'], status: 'ACTIVE' },
+      { id: 102, tenantId: 10, username: 'SR10310', displayName: 'Dr. Sriya Reddy', email: 'sriya@swetha.example', roles: ['Doctor'], status: 'ACTIVE' },
+      { id: 103, tenantId: 10, username: 'PS10210', displayName: 'Priya Sharma', email: 'priya@swetha.example', roles: ['Admin'], status: 'ACTIVE' },
+      { id: 201, tenantId: 20, username: 'HA10120', displayName: 'Hari', email: 'hari@greenvalley.example', roles: ['Receptionist'], status: 'ACTIVE' },
     ],
     rolePermissions: {
       Receptionist: [
@@ -226,10 +245,8 @@ function seed(): MockDb {
         Permissions.REGISTRATION_CREATE, Permissions.PAYMENT_COLLECT,
         Permissions.QUEUE_VIEW, Permissions.BILLING_VIEW, Permissions.DISCHARGE_MANAGE,
       ],
-      Doctor: [
-        Permissions.PATIENT_VIEW, Permissions.QUEUE_VIEW, Permissions.ENCOUNTER_VIEW,
-        Permissions.ENCOUNTER_EDIT, Permissions.PRESCRIPTION_CREATE, Permissions.LAB_ORDER_VIEW,
-      ],
+      // Doctor module only: no front desk queue, no laboratory worklist.
+      Doctor: [Permissions.PATIENT_VIEW, Permissions.ENCOUNTER_VIEW, Permissions.ENCOUNTER_EDIT, Permissions.PRESCRIPTION_CREATE],
       Admin: Object.values(Permissions),
     },
     departments,
@@ -258,8 +275,39 @@ function seed(): MockDb {
       { tenantId: 10, registrationId: 2, receiptNumber: 'RC-PAST-00002', amount: 500, mode: 'UPI', referenceNumber: 'UPI88812', paidAt: iso(45) },
       { tenantId: 20, registrationId: 3, receiptNumber: 'RC-PAST-00003', amount: 450, mode: 'CASH', referenceNumber: null, paidAt: iso(3) },
     ],
+    // Suresh Kumar's visit 4 days ago has a completed consultation (shows in the doctor's history panel).
+    encounters: [
+      {
+        tenantId: 10,
+        id: 1,
+        visitId: 1,
+        patientId: 2,
+        doctorId: 1001,
+        status: 'COMPLETED',
+        startedAt: iso(4),
+        completedAt: iso(4),
+        chiefComplaints: 'Fever with body ache for 2 days',
+        history: '',
+        pastHistory: 'Type 2 diabetes on metformin',
+        allergies: 'Sulfa drugs',
+        examination: 'Throat congested, chest clear',
+        advice: 'Plenty of fluids and rest',
+        followUpDate: '',
+        vitals: { temperatureF: 101.2, pulse: 96, systolicBp: 130, diastolicBp: 84, respiratoryRate: 18, spo2: 98, weightKg: 72, heightCm: 170 },
+        diagnoses: [{ icd10Code: 'J06.9', description: 'Acute upper respiratory infection, unspecified', isPrimary: true }],
+        prescriptions: [
+          { medicineId: 2, medicineName: 'Paracetamol', strength: '650 mg', form: 'Tablet', dose: '1 tablet', frequency: '1-1-1', timing: 'AFTER_FOOD', durationDays: 3, instructions: '' },
+        ],
+        labOrders: [{ testCode: 'CBC', testName: 'Complete blood count (CBC)', notes: '', status: 'ORDERED' }],
+        admissionRequested: false,
+        admissionType: '',
+        admissionReason: '',
+        lastEditedAt: null,
+        lastEditedBy: '',
+      },
+    ],
     sessions: {},
-    sequences: { 'patient:10': 103, 'patient:20': 202, patientId: 5, registrationId: 3 },
+    sequences: { 'patient:10': 103, 'patient:20': 202, patientId: 5, registrationId: 3, encounterId: 1 },
   };
 }
 

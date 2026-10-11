@@ -4,6 +4,9 @@
  * Note: no tenantId anywhere — the server owns tenant scoping.
  */
 
+import type { DoctorAvailability } from '@/shared/utils/doctorAvailability';
+import { DEFAULT_STATE } from '@/shared/utils/indianStates';
+
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 export const GENDER_OPTIONS: { value: Gender; label: string }[] = [
   { value: 'FEMALE', label: 'Female' },
@@ -134,6 +137,11 @@ export interface PatientInput {
   emergencyContactPhone: string;
   /** True when the DOB was derived from an age the patient told us (no exact birth date). */
   dobEstimated: boolean;
+  /**
+   * Aadhaar typed at the desk (12 digits, no spaces). Only sent when entered or changed;
+   * empty = keep what is already on file. The server stores it encrypted and never sends it back.
+   */
+  aadhaarNumber: string;
 }
 
 export interface Patient extends PatientInput {
@@ -143,6 +151,8 @@ export interface Patient extends PatientInput {
   createdAt: string;
   updatedAt: string;
   lastVisitDate: string | null;
+  /** "XXXX XXXX 1234" when an Aadhaar is on file, otherwise "". The full number is never sent to the browser. */
+  aadhaarMasked: string;
 }
 
 export interface Department {
@@ -290,11 +300,12 @@ export const EMPTY_PATIENT: PatientInput = {
   addressLine1: '',
   addressLine2: '',
   city: '',
-  state: '',
+  state: DEFAULT_STATE,
   postalCode: '',
   emergencyContactName: '',
   emergencyContactPhone: '',
   dobEstimated: false,
+  aadhaarNumber: '',
 };
 
 export const EMPTY_ACUTE: AcuteFields = {
@@ -385,4 +396,116 @@ export interface PatientContext {
   visits: Registration[];
   /** Most recent visit that is not open today, for display. */
   lastVisit: Registration | null;
+}
+
+// ---------------------------------------------------------------- patient queue (GET /registration/queue)
+
+/** After the consultation: tests still pending, or all results in. '' = no tests / not seen yet. */
+export type QueueLabStatus = '' | 'AWAITING_RESULTS' | 'RESULTS_READY';
+
+/** One patient in the front desk queue. Status only: no diagnosis or other clinical details. */
+export interface FrontDeskQueueItem {
+  visitId: number;
+  tokenNumber: string;
+  visitNumber: string;
+  registrationType: RegistrationType;
+  patientId: number;
+  patientNumber: string;
+  patientName: string;
+  gender: string;
+  ageYears: number | null;
+  mobileNumber: string;
+  doctorId: number;
+  doctorName: string;
+  departmentName: string;
+  reasonForVisit: string;
+  registeredAt: string;
+  queueStatus: QueueStatus;
+  /** RED, ORANGE, YELLOW, GREEN or '' */
+  triageLevel: string;
+  isFollowUp: boolean;
+  isReturning: boolean;
+  paymentStatus: PaymentStatus;
+  consultationFee: number;
+  payerType: string;
+  /** When the doctor started / finished the consultation. */
+  startedAt: string | null;
+  completedAt: string | null;
+  labStatus: QueueLabStatus;
+  /** Review date the doctor asked for (yyyy-mm-dd), or '': the desk can book it. */
+  followUpDate: string;
+  /** WARD, ICU, HDU, DAY_CARE when the doctor requested admission, else ''. */
+  admissionType: string;
+}
+
+export interface FrontDeskQueueCounts {
+  total: number;
+  waiting: number;
+  inConsultation: number;
+  completed: number;
+  admissionRequested: number;
+  awaitingLabResults: number;
+  emergency: number;
+}
+
+/** A doctor in the day's list: available or paused (reason, expected back) and their pace. */
+export interface FrontDeskDoctor {
+  doctorId: number;
+  name: string;
+  availability: DoctorAvailability;
+  /** Average minutes per patient. */
+  avgConsultMinutes: number;
+  /** TODAY (3+ seen today), RECENT (last 30 days) or DEFAULT (no history: 10 min). */
+  avgBasis: 'TODAY' | 'RECENT' | 'DEFAULT';
+  seenToday: number;
+  /** First consultation of the day; null = OPD not started yet. */
+  firstStartedAt: string | null;
+  lastCompletedAt: string | null;
+}
+
+export interface FrontDeskQueue {
+  date: string;
+  counts: FrontDeskQueueCounts;
+  items: FrontDeskQueueItem[];
+  doctors: FrontDeskDoctor[];
+}
+
+// ---------------------------------------------------------------- inpatients (GET /registration/inpatients)
+
+export type InpatientStatus = 'ADMITTED' | 'AWAITING_ADMISSION';
+
+/** A patient currently admitted (any admission date), or one the doctor asked to admit. */
+export interface InpatientItem {
+  visitId: number;
+  visitNumber: string;
+  tokenNumber: string;
+  status: InpatientStatus;
+  /** IP / ICU when admitted; OP when the doctor requested admission from the OPD. */
+  registrationType: RegistrationType;
+  patientId: number;
+  patientNumber: string;
+  patientName: string;
+  gender: string;
+  ageYears: number | null;
+  mobileNumber: string;
+  doctorName: string;
+  departmentName: string;
+  /** Admitted at, or when the doctor requested admission. */
+  since: string;
+  /** ICU unit (MICU, SICU…) or requested admission type (WARD, ICU, HDU, DAY_CARE), or ''. */
+  unit: string;
+  /** As typed at the desk, until the bed board is built. */
+  bedNumber: string;
+  payerType: string;
+  insurerName: string;
+  isMlc: boolean;
+  /** Deposits collected so far. */
+  advancePaid: number;
+  /** null until billing is built. */
+  amountPending: number | null;
+}
+
+export interface InpatientList {
+  counts: { admitted: number; icu: number; ward: number; awaitingAdmission: number };
+  items: InpatientItem[];
 }

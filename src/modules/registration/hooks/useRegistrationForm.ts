@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '@/core/api/httpClient';
 import { useCurrentUser } from '@/core/authentication/AuthContext';
-import { isBlank, patterns } from '@/shared/utils/validation';
+import { isBlank, isValidAadhaar, patterns } from '@/shared/utils/validation';
 import { registrationApi } from '../api/registrationApi';
 import {
   EMPTY_ACUTE,
@@ -137,6 +137,8 @@ export function validatePatient(p: PatientInput, emergency = false): FieldErrors
   if (p.dateOfBirth && new Date(p.dateOfBirth) > new Date()) e.dateOfBirth = 'Date of birth cannot be in the future';
   if (p.emergencyContactPhone && !patterns.mobile.test(p.emergencyContactPhone))
     e.emergencyContactPhone = 'Enter a valid 10-digit mobile number';
+  if (p.aadhaarNumber && !isValidAadhaar(p.aadhaarNumber))
+    e.aadhaarNumber = p.aadhaarNumber.length < 12 ? 'Enter all 12 digits' : 'This Aadhaar number is not valid — check the digits';
   return e;
 }
 
@@ -512,7 +514,8 @@ export function useRegistrationForm() {
 
   // ---------- drafts (browser only, never in the queue) ----------
   const saveDraft = useCallback(() => {
-    const draft: Draft = { patient, selectedPatient, visit, savedAt: new Date().toISOString() };
+    // Aadhaar is never kept in the browser, not even in a draft.
+    const draft: Draft = { patient: { ...patient, aadhaarNumber: '' }, selectedPatient, visit, savedAt: new Date().toISOString() };
     try {
       sessionStorage.setItem(draftKey(user.id), JSON.stringify(draft));
       setDraftSavedAt(draft.savedAt);

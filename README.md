@@ -21,15 +21,27 @@ The mock API is on by default (`VITE_USE_MOCK_API=true`). Sign in with one of th
 
 | Username | Role | Hospital (tenant) |
 |---|---|---|
-| `dev` | Receptionist | Swetha Multispeciality Hospital (10) |
-| `hari` | Receptionist | Green Valley Hospital (20). Has bought Front Desk and Doctor only |
-| `priya` | Admin | Swetha (10). Sees every module |
-| `sriya` | Doctor | Swetha (10). Can't open Registration |
+| `DN10110` | Receptionist | Swetha Multispeciality Hospital (10) |
+| `HA10120` | Receptionist | Green Valley Hospital (20). Has bought Front Desk and Doctor only |
+| `PS10210` | Admin | Swetha (10). Sees every module |
+| `SR10310` | Doctor | Swetha (10). Can't open Registration |
 
 Seeded patients to try in the search: `9876543210`, `SWH-000102` and `Ananya`. Each hospital only sees its own patients.
 Suresh Kumar (`9848012345`) saw Dr. Meera Shah 4 days ago, so a new visit to her at Swetha is a **free follow-up** (10-day window).
 To simulate a declined payment, choose UPI or Card and enter `0000` as the reference.
 To reset the mock data, run `resetMockDb()` in the browser console.
+
+### Signing in through the real backend
+
+The backend lives in `C:\Ayush360\Backend` (ASP.NET Core + PostgreSQL). To sign in with real users while the
+screens still use the mock data:
+
+1. Start the backend (VS Code: **Identity + HMS**, F5). In Development it creates the demo hospitals and users.
+2. In `.env.local` set `VITE_USE_REAL_AUTH=true`, then restart `npm run dev`.
+3. Sign in as `DN10110` / `demo123`. Vite forwards `/api/auth/*` to the Identity API (`localhost:5077`) and
+   `/api/*` to the HMS API (`localhost:5041`).
+
+Usernames are initials + user code + hospital id (Devendra N, user 101, Swetha 10 → `DN10110`).
 
 Scripts: `npm run dev`, `npm run build`, `npm run typecheck`, `npm run check:boundaries`, `npm run preview`.
 

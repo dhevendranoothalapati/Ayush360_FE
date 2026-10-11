@@ -7,7 +7,8 @@ import { env } from '@/core/config/env';
  *  - The client NEVER sends a tenantId. The backend derives the tenant from the
  *    authenticated user (CurrentUser -> CurrentTenant).
  *  - Every request carries a correlation id so logs/traces can be stitched together.
- *  - 401 => session is invalid, the app signs the user out.
+ *  - 401 => the short access token ran out: get a new one with the refresh cookie and repeat the call once.
+ *           Only if that fails too (12-hour limit reached, signed out elsewhere) is the user signed out.
  *  - 403 => authenticated but not allowed; surfaced to the caller as an ApiError.
  */
 
@@ -30,6 +31,8 @@ interface RequestOptions {
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined | null>;
   signal?: AbortSignal;
+  /** Internal: this call is the repeat after renewing the token. */
+  retried?: boolean;
 }
 
 const TOKEN_KEY = 'ayush360.accessToken';
@@ -41,6 +44,66 @@ export const tokenStore = {
   set: (token: string) => sessionStorage.setItem(TOKEN_KEY, token),
   clear: () => sessionStorage.removeItem(TOKEN_KEY),
 };
+
+/**
+ * Why the user was sent to the sign-in page (shown there once): session expired, inactivity, ...
+ * Kept per browser tab.
+ */
+const NOTICE_KEY = 'ayush360.signOutNotice';
+export const signOutNotice = {
+  set: (message: string) => {
+    try {
+      sessionStorage.setItem(NOTICE_KEY, message);
+    } catch {
+      /* storage blocked: the notice is only a nicety */
+    }
+  },
+  take: (): string | null => {
+    try {
+      const message = sessionStorage.getItem(NOTICE_KEY);
+      sessionStorage.removeItem(NOTICE_KEY);
+      return message;
+    } catch {
+      return null;
+    }
+  },
+};
+
+// Calls that must never trigger a token renewal themselves.
+const NO_RENEW_PATHS = ['/auth/login', '/auth/refresh', '/auth/logout'];
+
+let renewing: Promise<boolean> | null = null;
+
+/**
+ * Gets a new access token using the refresh cookie (HttpOnly, sent by the browser to /api/auth only).
+ * Only one renewal runs at a time, across all open tabs too: the server replaces the cookie on every renewal and
+ * treats a second use of the old one as theft (signs the user out everywhere), so two at once must never happen.
+ */
+export function renewSession(): Promise<boolean> {
+  // The plain mock backend has no refresh cookie; its demo tokens don't expire.
+  if (env.useMockApi && !env.useRealAuth) return Promise.resolve(false);
+  if (!renewing) {
+    const run = async (): Promise<boolean> => {
+      try {
+        const res = await apiRequest<{ accessToken: string }>('/auth/refresh', { method: 'POST' });
+        tokenStore.set(res.accessToken);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    renewing = (async () => {
+      try {
+        return typeof navigator !== 'undefined' && navigator.locks
+          ? await navigator.locks.request('ayush360-renew-session', run)
+          : await run();
+      } finally {
+        renewing = null;
+      }
+    })();
+  }
+  return renewing;
+}
 
 /** Registered by the AuthProvider so a 401 anywhere logs the user out. */
 export function onUnauthorized(handler: (() => void) | null) {
@@ -76,25 +139,41 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   let status: number;
   let payload: unknown;
 
-  if (env.useMockApi) {
+  // Sign-in can use the real Identity API while everything else still runs on the mock.
+  const useMock = env.useMockApi && !(env.useRealAuth && path.startsWith('/auth/'));
+
+  if (useMock) {
     // Loaded lazily so the mock backend is not bundled when VITE_USE_MOCK_API=false.
     const { handleMockRequest } = await import('@/mock/mockServer');
     const res = await handleMockRequest({ method, path: fullPath, body: options.body, headers });
     status = res.status;
     payload = res.body;
   } else {
-    const res = await fetch(`${env.apiBaseUrl}${fullPath}`, {
-      method,
-      headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-      signal: options.signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${env.apiBaseUrl}${fullPath}`, {
+        method,
+        headers,
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        signal: options.signal,
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      // API down, network lost, CORS, etc.: the browser only says "Failed to fetch".
+      throw new ApiError(0, 'Cannot reach the server. Check your internet connection and try again.');
+    }
     status = res.status;
     const text = await res.text();
     payload = text ? safeJson(text) : undefined;
   }
 
   if (status === 401) {
+    // Access token expired (they last 30 minutes): renew quietly and repeat the call once. The server rejected the
+    // first attempt before doing anything, so repeating a save is safe.
+    if (token && !options.retried && !NO_RENEW_PATHS.includes(path) && (await renewSession())) {
+      return apiRequest<T>(path, { ...options, retried: true });
+    }
+    if (token && !NO_RENEW_PATHS.includes(path)) signOutNotice.set('Your session has expired. Please sign in again.');
     unauthorizedHandler?.();
     throw new ApiError(401, 'Your session has expired. Please sign in again.');
   }

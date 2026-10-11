@@ -1128,3 +1128,646 @@
     margin: 0;
   }
 }
+
+/* ---------- header: same teal gradient as the sidebar hospital card and the Doctor workspace ----------
+   Every dashboard header (Registration, Patient queue OPD / Inpatients, Doctor) uses var(--primary-grad). */
+.fd-hero {
+  color: #fff;
+  background: var(--primary-grad);
+  border: none;
+  box-shadow: 0 16px 36px rgba(15, 124, 128, 0.25);
+}
+
+/* =====================================================================
+   Patient queue (FrontDeskQueuePage): everyone registered today, all doctors
+   ===================================================================== */
+.fq-page {
+  display: grid;
+  gap: 0;
+}
+.fq-hero-sub {
+  position: relative;
+  margin: 0;
+  opacity: 0.92;
+}
+.fq-summary {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.fq-summary span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  background: rgba(255, 255, 255, 0.16);
+}
+.fq-stat {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.fq-stat:hover,
+.fq-stat.on {
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.fq-card {
+  display: grid;
+  gap: 14px;
+}
+.fq-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+}
+.fq-filters,
+.fq-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.fq-chip {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fq-chip:hover {
+  border-color: var(--primary);
+}
+.fq-chip.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.fq-chip-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: var(--amber);
+  color: #fff;
+}
+.fq-chip-count-red {
+  background: var(--danger);
+}
+.fq-doctor {
+  width: auto;
+  min-width: 190px;
+}
+.fq-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.fq-search svg {
+  position: absolute;
+  left: 10px;
+  color: var(--muted);
+}
+.fq-search .input {
+  padding-left: 34px;
+  width: 250px;
+}
+.fq-date {
+  width: auto;
+}
+.fq-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 112px;
+}
+.fq-refresh:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+.fq-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--primary-50);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+.fq-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+.fq-error small {
+  display: block;
+  margin-top: 2px;
+  opacity: 0.85;
+}
+.fq-empty {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+.fq-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.fq-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.fq-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1.5fr) minmax(0, 1.2fr) 150px 190px;
+  gap: 14px;
+  align-items: center;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.fq-row:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(15, 124, 128, 0.12);
+}
+.fq-row.status-in_consultation {
+  border-left: 4px solid var(--primary);
+  background: #f1faf8;
+}
+.fq-row.fq-row-acute.status-waiting {
+  border-left: 4px solid var(--danger);
+}
+.fq-row.status-completed {
+  opacity: 0.82;
+}
+.fq-token {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+.fq-token-acute {
+  color: var(--danger);
+}
+.fq-patient,
+.fq-doctor-cell,
+.fq-time {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.fq-patient small,
+.fq-doctor-cell small,
+.fq-time small {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.fq-doctor-cell strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fq-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fq-time small {
+  white-space: nowrap;
+}
+.fq-time small.wait-long {
+  color: #b26a00;
+  font-weight: 700;
+}
+.fq-time small.wait-very-long {
+  color: var(--danger);
+  font-weight: 700;
+}
+.fq-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.fq-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+}
+.fq-tag-follow {
+  background: var(--green-50);
+  color: var(--green);
+  border-color: transparent;
+}
+.fq-tag-icu {
+  background: var(--violet-50);
+  color: var(--violet);
+  border-color: transparent;
+}
+.fq-tag-warn {
+  background: var(--amber-50);
+  color: #8a5a00;
+  border-color: transparent;
+}
+.fq-triage-red {
+  background: #c62828;
+  color: #fff;
+  border-color: transparent;
+}
+.fq-triage-orange {
+  background: #ef6c00;
+  color: #fff;
+  border-color: transparent;
+}
+.fq-triage-yellow {
+  background: #f9c80e;
+  color: #3d2f00;
+  border-color: transparent;
+}
+.fq-triage-green {
+  background: #2e7d32;
+  color: #fff;
+  border-color: transparent;
+}
+.fq-triage-none {
+  background: var(--rose-50);
+  color: var(--rose);
+  border-color: transparent;
+}
+.fq-status {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+.fq-line {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.fq-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.fq-pill.pill-waiting {
+  background: var(--amber-50);
+  color: #8a5a00;
+}
+.fq-pill.pill-in_consultation {
+  background: var(--primary-50);
+  color: var(--primary);
+}
+.fq-pill.pill-completed {
+  background: var(--green-50);
+  color: var(--green);
+}
+.fq-pill.pill-admission_requested,
+.fq-pill.pill-converted_to_inpatient,
+.fq-pill.pill-results_ready {
+  background: var(--violet-50);
+  color: var(--violet);
+}
+.fq-pill.pill-awaiting_results {
+  background: var(--amber-50);
+  color: #8a5a00;
+  border: 1px dashed var(--amber);
+}
+
+@media (max-width: 1100px) {
+  .fq-row {
+    grid-template-columns: 64px minmax(0, 1fr) 170px;
+  }
+  .fq-doctor-cell,
+  .fq-time {
+    grid-column: 2 / 3;
+  }
+  .fq-status {
+    grid-column: 3;
+    grid-row: 1 / span 3;
+  }
+}
+@media (max-width: 640px) {
+  .fq-row {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  .fq-doctor-cell,
+  .fq-time,
+  .fq-status {
+    grid-column: 2;
+    grid-row: auto;
+    justify-items: start;
+  }
+  .fq-tools,
+  .fq-search,
+  .fq-search .input,
+  .fq-doctor {
+    width: 100%;
+  }
+}
+
+/* ---------- OPD | Inpatients switch ---------- */
+.fq-views {
+  display: inline-flex;
+  justify-self: start;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+.fq-views button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 8px 18px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.fq-views button:hover {
+  color: var(--primary);
+}
+.fq-views button.on {
+  background: var(--primary);
+  color: #fff;
+}
+.fq-view-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ---------- inpatient rows ---------- */
+.ip-row {
+  grid-template-columns: 96px minmax(0, 1.5fr) minmax(0, 1.1fr) 140px 200px;
+}
+.ip-row-icu {
+  border-left: 4px solid var(--violet);
+}
+.ip-row-awaiting {
+  border-left: 4px dashed var(--amber);
+  background: #fffbf3;
+}
+.ip-bed {
+  display: grid;
+  justify-items: start;
+  gap: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--primary-50);
+}
+.ip-bed small {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ip-bed strong {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary-700);
+}
+.ip-day {
+  font-weight: 700;
+  color: var(--primary) !important;
+}
+.ip-money {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.ip-money small {
+  color: var(--muted);
+}
+@media (max-width: 1100px) {
+  .ip-row {
+    grid-template-columns: 84px minmax(0, 1fr) 180px;
+  }
+}
+@media (max-width: 640px) {
+  .ip-row {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+}
+
+/* ---------- doctor cards: status + pace ---------- */
+.fq-strip {
+  position: relative;
+  margin-bottom: 14px;
+}
+/* One row that scrolls sideways; the patient list below never moves. */
+.fq-doctors {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scroll-padding: 0 4px;
+  padding: 4px 4px 8px;
+  scrollbar-width: thin;
+}
+.fq-strip-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-top: -22px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: 0 4px 14px rgba(13, 43, 69, 0.18);
+  cursor: pointer;
+}
+.fq-strip-arrow:hover {
+  border-color: var(--primary);
+}
+.fq-strip-arrow.left {
+  left: -10px;
+}
+.fq-strip-arrow.left svg {
+  transform: rotate(90deg);
+}
+.fq-strip-arrow.right {
+  right: -10px;
+}
+.fq-strip-arrow.right svg {
+  transform: rotate(-90deg);
+}
+.fq-doc {
+  flex: 0 0 250px;
+  scroll-snap-align: start;
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--green);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.fq-doc:hover,
+.fq-doc.on {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(15, 124, 128, 0.18);
+}
+.fq-doc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fq-doc-head strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fq-doc-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.fq-doc-state {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.fq-doc small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.fq-doc-foot {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+}
+.fq-doc.tone-ok .fq-doc-state {
+  color: var(--green);
+}
+.fq-doc.tone-busy {
+  border-top-color: var(--primary);
+}
+.fq-doc.tone-busy .fq-doc-dot {
+  background: var(--primary);
+}
+.fq-doc.tone-busy .fq-doc-state {
+  color: var(--primary);
+}
+.fq-doc.tone-away {
+  border-top-color: var(--danger);
+  background: #fff7f7;
+}
+.fq-doc.tone-away .fq-doc-dot {
+  background: var(--danger);
+}
+.fq-doc.tone-away .fq-doc-state {
+  color: var(--danger);
+}
+.fq-doc.tone-idle {
+  border-top-color: var(--amber);
+}
+.fq-doc.tone-idle .fq-doc-dot {
+  background: var(--amber);
+}
+.fq-doc.tone-idle .fq-doc-state {
+  color: #8a5a00;
+}
+
+/* expected time to see the doctor: wraps inside the status column, never past the row */
+.fq-eta {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--primary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.fq-row > * {
+  min-width: 0;
+}
+.fq-status {
+  min-width: 0;
+  text-align: right;
+}
+.fq-row:not(.ip-row) {
+  grid-template-columns: 76px minmax(0, 1.5fr) minmax(0, 1.2fr) 150px 210px;
+}
+@media (max-width: 1100px) {
+  .fq-row:not(.ip-row) {
+    grid-template-columns: 64px minmax(0, 1fr) 190px;
+  }
+}
+@media (max-width: 640px) {
+  .fq-row:not(.ip-row) {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  .fq-status,
+  .fq-eta {
+    text-align: left;
+  }
+}
+.fq-eta-unknown {
+  color: var(--danger);
+}
+.fq-eta-away {
+  color: #b26a00;
+}
