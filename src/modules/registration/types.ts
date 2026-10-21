@@ -282,6 +282,17 @@ export interface Registration extends PayerFields, AcuteFields {
   rescheduledFrom?: string;
   /** Why the desk cancelled it (mock only for now). */
   cancelReason?: string;
+  /** Desk marked "not here" when calling for the doctor (ISO time); null = present. */
+  notHereAt?: string | null;
+  /** Lab results flow (mock storage; the server keeps these in the visit's details). */
+  labExpectedAt?: string | null;
+  labExpectedLater?: boolean;
+  labReadyAt?: string | null;
+  /** 'LAB' = back in the doctor's line to review lab results (same day). */
+  reviewFor?: string | null;
+  reviewReturnedAt?: string | null;
+  reviewStartedAt?: string | null;
+  reviewCompletedAt?: string | null;
 }
 
 export interface Receipt {
@@ -457,6 +468,13 @@ export interface FrontDeskQueueItem {
   rescheduledFrom: string;
   /** How the visit came in (PHONE shows "Phone appointment"). */
   source: VisitSource;
+  /** Desk called them and they weren't there (ISO time); skipped as "next" for 15 min, then back in line. */
+  notHereAt: string | null;
+  /** Back in the doctor's line to review lab results (seen right after emergencies; same token, no fee). */
+  isLabReview: boolean;
+  /** Awaiting lab results: when the lab said they'd be ready (ISO), or later = tomorrow or after. */
+  labResultsExpectedAt: string | null;
+  labResultsExpectedLater: boolean;
 }
 
 export interface FrontDeskQueueCounts {

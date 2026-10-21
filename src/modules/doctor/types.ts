@@ -91,6 +91,8 @@ export interface QueueItem {
   lastVisitAt: string | null;
   /** Its primary diagnosis, else the reason given at the desk. */
   lastVisitSummary: string;
+  /** Back with lab results: the same consultation reopens (seen right after emergencies). */
+  isLabReview: boolean;
 }
 
 export interface QueueCounts {

@@ -716,22 +716,23 @@ function doctorQueue(ctx: Ctx, date: string | null): DoctorQueue {
       gender: p.gender,
       ageYears: ageYears(p.dateOfBirth),
       reasonForVisit: r.reasonForVisit,
-      registeredAt: r.registrationDate,
+      registeredAt: r.reviewFor === 'LAB' ? r.reviewReturnedAt ?? r.registrationDate : r.registrationDate,
       queueStatus: r.queueStatus,
       isFollowUp: r.isFollowUp,
       isReturning: db.registrations.some((o) => o.patientId === r.patientId && o.registrationDate < r.registrationDate),
       triageLevel: r.triageLevel,
       doctorName: r.doctorName,
       encounterId: enc?.id ?? null,
-      startedAt: enc?.startedAt ?? null,
-      completedAt: enc?.completedAt ?? null,
-      labStatus: labStatusOf(r.queueStatus, enc?.labOrders ?? []),
+      startedAt: r.reviewFor === 'LAB' ? r.reviewStartedAt ?? null : enc?.startedAt ?? null,
+      completedAt: r.reviewFor === 'LAB' ? r.reviewCompletedAt ?? null : enc?.completedAt ?? null,
+      labStatus: r.reviewFor === 'LAB' ? '' : labStatusOf(r.queueStatus, enc?.labOrders ?? []),
       primaryDiagnosis: dxText(enc),
       medicineCount: enc?.prescriptions.length ?? 0,
       testCount: enc?.labOrders.length ?? 0,
       followUpDate: enc?.followUpDate ?? '',
       lastVisitAt: last?.registrationDate ?? null,
       lastVisitSummary: last ? dxText(db.encounters.find((e) => e.visitId === last.id), false) || last.reasonForVisit : '',
+      isLabReview: r.reviewFor === 'LAB',
     };
   });
   const count = (s: string) => regs.filter((r) => r.queueStatus === s).length;
@@ -893,8 +894,8 @@ function frontDeskQueue(ctx: Ctx, date: string | null): FrontDeskQueue {
       doctorName: r.doctorName,
       departmentName: r.departmentName,
       reasonForVisit: r.reasonForVisit,
-      // Appointment: when it was booked; otherwise when the patient joined the queue.
-      registeredAt: r.queueStatus === 'BOOKED' ? r.createdAt : r.registrationDate,
+      // Appointment: when it was booked; lab review: when they went back in line; otherwise when they joined the queue.
+      registeredAt: r.reviewFor === 'LAB' ? r.reviewReturnedAt ?? r.registrationDate : r.queueStatus === 'BOOKED' ? r.createdAt : r.registrationDate,
       queueStatus: r.queueStatus,
       triageLevel: r.triageLevel,
       isFollowUp: r.isFollowUp,
@@ -904,14 +905,18 @@ function frontDeskQueue(ctx: Ctx, date: string | null): FrontDeskQueue {
       paymentStatus: r.paymentStatus,
       consultationFee: r.consultationFee,
       payerType: r.payerType,
-      startedAt: enc?.startedAt ?? null,
-      completedAt: enc?.completedAt ?? null,
-      labStatus: labStatusOf(r.queueStatus, enc?.labOrders ?? []),
+      startedAt: r.reviewFor === 'LAB' ? r.reviewStartedAt ?? null : enc?.startedAt ?? null,
+      completedAt: r.reviewFor === 'LAB' ? r.reviewCompletedAt ?? null : enc?.completedAt ?? null,
+      labStatus: r.reviewFor === 'LAB' ? '' : labStatusOf(r.queueStatus, enc?.labOrders ?? []),
       followUpDate: enc?.followUpDate ?? '',
       admissionType: enc?.admissionRequested ? enc.admissionType : '',
       visitDate: localDate(r.registrationDate),
       rescheduledFrom: r.rescheduledFrom ?? '',
       source: r.source,
+      notHereAt: r.notHereAt ?? null,
+      isLabReview: r.reviewFor === 'LAB',
+      labResultsExpectedAt: r.labExpectedAt ?? null,
+      labResultsExpectedLater: r.labExpectedLater ?? false,
     };
   };
   const items = regs.map(toItem);
@@ -1070,6 +1075,56 @@ function rescheduleVisit(ctx: Ctx, id: number, body: { date?: string }): Registr
   return strip(r);
 }
 
+/** Desk called the patient and they weren't there (or they're back). Today's waiting visits only. */
+function markNotHere(ctx: Ctx, id: number, body: { notHere?: boolean }): Registration {
+  authorize(ctx, Permissions.REGISTRATION_CREATE);
+  const r = findVisit(ctx, id);
+  const waiting = r.queueStatus === 'WAITING' && (r.visitStatus === 'REGISTERED' || r.reviewFor === 'LAB');
+  if (!waiting || localDate(r.registrationDate) !== dayPlus(0))
+    throw new HttpError(409, "Only today's waiting patients can be marked.");
+  r.notHereAt = body.notHere ? new Date().toISOString() : null;
+  saveDb();
+  return strip(r);
+}
+
+/** Visit with tests the lab hasn't finished, after the doctor finished (desk records results until the Lab module). */
+function awaitingResults(ctx: Ctx, id: number) {
+  authorize(ctx, Permissions.REGISTRATION_CREATE);
+  const r = findVisit(ctx, id);
+  const enc = getDb().encounters.find((e) => e.visitId === r.id);
+  if (!(r.queueStatus === 'COMPLETED' || r.queueStatus === 'ADMISSION_REQUESTED') || r.reviewFor === 'LAB' || !enc)
+    throw new HttpError(409, "This visit isn't waiting for lab results.");
+  const pending = enc.labOrders.filter((o) => !o.status || o.status === 'ORDERED' || o.status === 'SAMPLE_COLLECTED');
+  if (!pending.length) throw new HttpError(409, 'All lab results for this visit are already in.');
+  return { r, pending };
+}
+
+function setLabExpected(ctx: Ctx, id: number, body: { expectedAt?: string | null; later?: boolean }): Registration {
+  const { r } = awaitingResults(ctx, id);
+  r.labExpectedLater = Boolean(body.later);
+  r.labExpectedAt = body.later ? null : body.expectedAt ?? null;
+  saveDb();
+  return strip(r);
+}
+
+/** All results in. Same day → back into the doctor's line as a lab review (same token, no fee). */
+function markLabReady(ctx: Ctx, id: number): Registration {
+  const { r, pending } = awaitingResults(ctx, id);
+  const now = new Date().toISOString();
+  pending.forEach((o) => (o.status = 'COMPLETED'));
+  r.labReadyAt = now;
+  r.labExpectedAt = null;
+  r.labExpectedLater = false;
+  if (localDate(r.registrationDate) === dayPlus(0) && r.queueStatus === 'COMPLETED') {
+    r.queueStatus = 'WAITING'; // visitStatus stays COMPLETED: the desk can't cancel / edit it
+    r.reviewFor = 'LAB';
+    r.reviewReturnedAt = now;
+    r.notHereAt = null;
+  }
+  saveDb();
+  return strip(r);
+}
+
 /** Patient with today's appointment arrived: fee (follow-up rule applied for today) + today's A-token. */
 function checkIn(ctx: Ctx, id: number, body: { payment?: PaymentInput | null }): CreateRegistrationResponse {
   authorize(ctx, Permissions.REGISTRATION_CREATE);
@@ -1201,7 +1256,11 @@ function consultationOf(ctx: Ctx, visitId: number): Consultation {
       departmentName: r.departmentName,
     },
     encounter: encounterOut,
-    canStart: own && !enc && today && r.visitStatus === 'REGISTERED' && (r.queueStatus === 'WAITING' || r.queueStatus === 'IN_CONSULTATION'),
+    canStart:
+      own &&
+      today &&
+      ((!enc && r.visitStatus === 'REGISTERED' && (r.queueStatus === 'WAITING' || r.queueStatus === 'IN_CONSULTATION')) ||
+        (Boolean(enc) && r.reviewFor === 'LAB' && r.queueStatus === 'WAITING')), // lab review: reopen
     // Until midnight of the visit day the doctor can still correct a completed consultation.
     canEdit: own && Boolean(enc) && (enc?.status === 'IN_PROGRESS' || today),
     history,
@@ -1220,7 +1279,16 @@ function startConsultation(ctx: Ctx, visitId: number): Consultation {
   const db = getDb();
   const r = findVisit(ctx, visitId);
   const me = requireOwn(ctx, r);
-  if (!db.encounters.some((e) => e.visitId === r.id)) {
+  const existing = db.encounters.find((e) => e.visitId === r.id);
+  if (existing && r.reviewFor === 'LAB' && r.queueStatus === 'WAITING' && localDate(r.registrationDate) === dayPlus(0)) {
+    // Lab results review: the same consultation reopens.
+    r.queueStatus = 'IN_CONSULTATION';
+    r.reviewStartedAt = new Date().toISOString();
+    r.notHereAt = null;
+    endBreaks(ctx.tenantId, me.id);
+    saveDb();
+  }
+  if (!existing) {
     if (localDate(r.registrationDate) !== localDate(new Date().toISOString()))
       throw new HttpError(409, "Only today's patients can be seen. This visit is from an earlier day.");
     if (r.visitStatus !== 'REGISTERED' || !(r.queueStatus === 'WAITING' || r.queueStatus === 'IN_CONSULTATION'))
@@ -1310,16 +1378,25 @@ function saveConsultation(ctx: Ctx, encounterId: number, input: EncounterInput, 
   const errors = validateEncounter(input, complete || correcting);
   if (Object.keys(errors).length) throw new HttpError(400, 'Please correct the highlighted fields.', errors);
 
+  // Tests the lab already worked on keep their status (e.g. saving during a lab review); matched by code, else name.
+  const keyOf = (o: { testCode?: string; testName: string }) => (o.testCode || o.testName).trim().toUpperCase();
+  const labStatusByTest = new Map(enc.labOrders.map((o) => [keyOf(o), o.status] as const));
   const diagnoses = input.diagnoses.filter((d) => !isBlank(d.description));
   const primary = Math.max(0, diagnoses.findIndex((d) => d.isPrimary));
   Object.assign(enc, {
     ...input,
     diagnoses: diagnoses.map((d, i) => ({ ...d, isPrimary: i === primary })),
-    labOrders: input.labOrders.map((o) => ({ ...o, status: 'ORDERED' })),
+    labOrders: input.labOrders.map((o) => ({ ...o, status: labStatusByTest.get(keyOf(o)) ?? 'ORDERED' })),
     admissionType: input.admissionRequested ? input.admissionType : '',
     admissionReason: input.admissionRequested ? input.admissionReason : '',
   });
-  if (correcting) {
+  if (correcting && complete && r.reviewFor === 'LAB' && r.queueStatus === 'IN_CONSULTATION') {
+    // "Complete review": the patient leaves the doctor again.
+    enc.lastEditedAt = new Date().toISOString();
+    enc.lastEditedBy = me.name;
+    r.reviewCompletedAt = enc.lastEditedAt;
+    r.queueStatus = enc.admissionRequested ? 'ADMISSION_REQUESTED' : 'COMPLETED';
+  } else if (correcting) {
     enc.lastEditedAt = new Date().toISOString();
     enc.lastEditedBy = me.name;
     if (r.queueStatus === 'COMPLETED' || r.queueStatus === 'ADMISSION_REQUESTED')
@@ -1476,8 +1553,12 @@ async function route(req: MockRequest): Promise<unknown> {
       onDay && onDay > dayPlus(0) ? onDay : undefined,
     );
   }
-  const regAction = path.match(/^\/registration\/registrations\/(\d+)\/(cancel|reschedule|check-in)$/);
+  const regAction = path.match(/^\/registration\/registrations\/(\d+)\/(cancel|reschedule|check-in|not-here|lab-expected|lab-ready)$/);
   if (m === 'POST' && regAction) {
+    if (regAction[2] === 'lab-expected')
+      return setLabExpected(ctx, Number(regAction[1]), (req.body ?? {}) as { expectedAt?: string | null; later?: boolean });
+    if (regAction[2] === 'lab-ready') return markLabReady(ctx, Number(regAction[1]));
+    if (regAction[2] === 'not-here') return markNotHere(ctx, Number(regAction[1]), (req.body ?? {}) as { notHere?: boolean });
     if (regAction[2] === 'check-in')
       return checkIn(ctx, Number(regAction[1]), (req.body ?? {}) as { payment?: PaymentInput | null });
     return regAction[2] === 'cancel'

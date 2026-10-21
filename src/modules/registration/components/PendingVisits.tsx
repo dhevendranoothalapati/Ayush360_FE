@@ -14,6 +14,16 @@ import { VisitActions, addDays, dayLabel } from './VisitActions';
  */
 
 const VISIBLE = 5;
+/** Collapsed or open is remembered in this browser (per desk). */
+const COLLAPSE_KEY = 'ayush360.opQueue.pendingCollapsed';
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 const daysAgo = (yyyyMmDd: string) => {
   const n = Math.round((new Date(`${addDays(0)}T00:00:00`).getTime() - new Date(`${yyyyMmDd}T00:00:00`).getTime()) / 86_400_000);
@@ -28,12 +38,24 @@ export function PendingVisits({
   onChanged: (message: string) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
   const navigate = useNavigate();
   if (items.length === 0) return null;
+
+  function toggle() {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1');
+      } catch {
+        /* the choice just isn't remembered */
+      }
+      return !c;
+    });
+  }
   const shown = showAll ? items : items.slice(0, VISIBLE);
 
   return (
-    <section className="card fq-pending" aria-label="Pending visits from earlier days">
+    <section className={collapsed ? 'card fq-pending collapsed' : 'card fq-pending'} aria-label="Pending visits from earlier days">
       <div className="fq-pending-head">
         <span className="fq-pending-icon">
           <Icon name="calendar" size={20} />
@@ -42,11 +64,26 @@ export function PendingVisits({
           <h2>
             Pending from earlier days <span className="fq-pending-count">{items.length}</span>
           </h2>
-          <p>Registered (or booked) but never seen by the doctor. Use ⋮ to move to today, change the date, or cancel.</p>
+          {!collapsed && (
+            <p>Registered (or booked) but never seen by the doctor. Use ⋮ to move to today, change the date, or cancel.</p>
+          )}
         </div>
+        <button
+          type="button"
+          className="fq-pending-toggle"
+          onClick={toggle}
+          aria-expanded={!collapsed}
+          aria-controls="fq-pending-list"
+        >
+          {collapsed ? 'Show' : 'Hide'}
+          <Icon name="chevronDown" size={18} />
+        </button>
       </div>
 
-      <ul className="fq-pending-list">
+      {!collapsed && (
+      <>
+
+      <ul className="fq-pending-list" id="fq-pending-list">
         {shown.map((i) => (
           <li key={i.visitId} className="fq-pending-row">
             <button
@@ -92,6 +129,8 @@ export function PendingVisits({
         <button type="button" className="fq-pending-more" onClick={() => setShowAll((s) => !s)}>
           {showAll ? 'Show fewer' : `Show all ${items.length}`}
         </button>
+      )}
+      </>
       )}
     </section>
   );

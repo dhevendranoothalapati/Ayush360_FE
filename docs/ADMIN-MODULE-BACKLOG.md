@@ -51,6 +51,10 @@ Ayush360 team (onboarding a new hospital, licences) is listed separately in sect
 | 3.11 | Admitted-patient window on the Inpatient queue | 30 days (until a Discharge step exists) | `RegistrationService.InpatientWindowDays` |
 | 3.12 | Token series | OPD `A-`, Emergency `E-`, ICU `I-`, reset daily | `RegistrationService` |
 | 3.13 | Refund on cancel | Allowed for users with `PAYMENT_COLLECT` | `CancelVisitAsync` |
+| 3.14 | "Not here" skip time | 15 min, then the patient is back in line with their token | FE `FrontDeskQueuePage.NOT_HERE_MINUTES` |
+| 3.15 | When a doctor counts as "free" for Send in now | Started OPD today, not paused, nobody with them | FE `nextPatients()` |
+| 3.16 | Lab results review (planned) | Same day: automatic return to the line when all results are in; order = emergencies → results review → token; desk marks results ready until the Lab module exists; review appointment on a later day follows the follow-up rule | planned – `FRONT-DESK-QUEUE-AND-APPOINTMENTS.md` 9.1 |
+| 3.17 | Prescription lock | Doctor may amend (addendum) until the Pharmacy has dispensed the medicines | planned – Pharmacy module |
 
 ## 4. Clinical templates
 
@@ -69,6 +73,24 @@ Ayush360 team (onboarding a new hospital, licences) is listed separately in sect
 | 5.3 | **Data export / "Export my data"** | All hospital data as CSV (FHIR later); logged in the audit trail. | 8 Oct |
 | 5.4 | Reports | Daily collection by user (with refunds), MLC register, cancelled visits with reasons, missed appointments, OPD footfall by doctor / by visit type (walk-in vs phone appointment). | — |
 
+## 4a. Display screens and rooms (with real-time calling – pending)
+
+| # | Item | Notes |
+|---|---|---|
+| 4a.1 | Doctor room numbers | Fixed per doctor or per day/shift (to decide) |
+| 4a.2 | Display screens | Name, which doctors/departments, pair (6-digit code) / revoke |
+| 4a.3 | Announcements | Language(s), repeat count, show first name or token only |
+| 4a.4 | Who calls the next patient | Doctor, desk, or both (decision pending) |
+
+## 5a. AI assistant (see `AI-ASSISTANT-PLAN.md`)
+
+| # | Item | Notes | Agreed |
+|---|---|---|---|
+| 5a.1 | AI assistant switch per hospital | Off / front desk only / clinical; off by default; consent wording on the registration form | 21 Oct |
+| 5a.2 | Monthly usage cap and usage report | Cap per hospital, rate limit per user; report = conversations and cost per month | 21 Oct |
+| 5a.3 | Chat history retention | Keep N days or don't keep; deletion with the hospital's data on exit | 21 Oct |
+| 5a.4 | AI audit view | Who asked what, which tools ran, what was confirmed (part of the audit log) | 21 Oct |
+
 ## 6. Platform (Ayush360 team, not the hospital admin)
 
 - Onboarding screen for a new hospital (uses `TenantOnboardingService`), module licences, demo data on/off.
@@ -81,3 +103,5 @@ Ayush360 team (onboarding a new hospital, licences) is listed separately in sect
 | Date | Change |
 |---|---|
 | 21 Oct 2026 | File created from decisions so far; added treatment templates (4.1) and the settings introduced by OP queue, doctor availability and appointment booking (section 3). |
+| 21 Oct 2026 | Added AI assistant settings (section 5a). |
+| 21 Oct 2026 | Added "not here" skip time and "free doctor" rule (3.14–3.15) and display screens / rooms (4a). |

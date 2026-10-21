@@ -2248,3 +2248,141 @@
   color: #3f4fb3;
   border-color: #c9d1f5;
 }
+
+/* ---------- Next patients: send-in-now blink, "not here" ---------- */
+@keyframes fq-sendnow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.35);
+  }
+}
+.fq-item.fq-item-sendnow {
+  border-left: 5px solid var(--green);
+  background: #f0fdf4;
+  animation: fq-sendnow-pulse 1.6s ease-in-out infinite;
+}
+.fq-sendnow {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--green);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.fq-item.fq-item-nothere {
+  opacity: 0.75;
+  border-left: 4px dashed var(--amber);
+}
+.fq-nothere {
+  color: #8a5a00;
+  font-weight: 600;
+}
+.fq-item-actions {
+  flex: 0 0 auto;
+  min-width: 44px;
+  align-content: center;
+  gap: 6px;
+}
+.fq-mini-btn {
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fq-mini-btn:hover:not(:disabled) {
+  border-color: var(--amber);
+  color: #8a5a00;
+}
+.fq-mini-btn.on {
+  border-color: var(--green);
+  color: var(--green);
+}
+.fq-mini-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.fq-doc.fq-doc-sendnow {
+  border-color: var(--green);
+  animation: fq-sendnow-pulse 1.6s ease-in-out infinite;
+}
+.fq-doc-next {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fq-doc-next.send {
+  color: var(--green);
+  font-weight: 700;
+}
+.fq-chip-count.fq-chip-count-send {
+  background: var(--green);
+  color: #fff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fq-item.fq-item-sendnow,
+  .fq-doc.fq-doc-sendnow {
+    animation: none;
+  }
+}
+
+/* Pending from earlier days: expand / collapse */
+.fq-pending-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fq-pending-toggle svg {
+  transition: transform 0.15s;
+  transform: rotate(180deg);
+}
+.fq-pending.collapsed .fq-pending-toggle svg {
+  transform: none;
+}
+.fq-pending.collapsed .fq-pending-head {
+  align-items: center;
+}
+.fq-mark-error {
+  max-width: 160px;
+  color: var(--danger);
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: right;
+}
+
+/* ---------- Lab results review ---------- */
+.fq-tag.fq-tag-review {
+  background: var(--violet-50);
+  color: var(--violet);
+  border-color: transparent;
+}
+.fq-lab-expected {
+  color: #8a5a00;
+  font-weight: 600;
+}

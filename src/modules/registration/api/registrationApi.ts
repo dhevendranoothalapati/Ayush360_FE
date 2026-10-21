@@ -61,6 +61,18 @@ export const registrationApi = {
   /** Everyone registered for a day (all doctors) with their latest status. date = yyyy-mm-dd, default today. */
   getQueue: (date?: string) => http.get<FrontDeskQueue>('/registration/queue', { date }),
 
+  /** When the lab said results will be ready: a time today (ISO), or later = tomorrow or after. */
+  setLabExpected: (registrationId: number, expectedAt: string | null, later: boolean) =>
+    http.post<Registration>(`/registration/registrations/${registrationId}/lab-expected`, { expectedAt, later }),
+
+  /** All lab results are in (desk marks it until the Lab module exists). Same day → back in the doctor's line. */
+  markLabReady: (registrationId: number) =>
+    http.post<Registration>(`/registration/registrations/${registrationId}/lab-ready`, {}),
+
+  /** Desk called the patient and they weren't there (true), or they're back (false). Shared by all desks. */
+  markNotHere: (registrationId: number, notHere: boolean) =>
+    http.post<Registration>(`/registration/registrations/${registrationId}/not-here`, { notHere }),
+
   /** Cancel a visit the doctor hasn't started (optionally refunding the fee). */
   cancelVisit: (registrationId: number, req: CancelVisitRequest) =>
     http.post<Registration>(`/registration/registrations/${registrationId}/cancel`, req),

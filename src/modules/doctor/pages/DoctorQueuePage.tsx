@@ -92,12 +92,16 @@ function daySummary(items: QueueItem[]) {
 const tokenNo = (i: QueueItem) => Number(i.tokenNumber.replace(/\D/g, '')) || 0;
 
 /**
- * Order: in consultation first, then emergencies (by triage), then OPD waiting by token number (a patient who booked
- * ahead keeps their place once checked in), then finished.
+ * Order: in consultation first, then emergencies (by triage), then patients back with lab results, then OPD waiting
+ * by token number (a patient who booked ahead keeps their place once checked in), then finished.
  */
 function sortQueue(items: QueueItem[]): QueueItem[] {
   const rank = (i: QueueItem) =>
-    i.queueStatus === 'IN_CONSULTATION' ? 0 : i.queueStatus === 'WAITING' ? (i.registrationType === 'OP' ? 2 : 1) : 3;
+    i.queueStatus === 'IN_CONSULTATION'
+      ? 0
+      : i.queueStatus === 'WAITING'
+        ? i.registrationType !== 'OP' ? 1 : i.isLabReview ? 1.5 : 2
+        : 3;
   const triage = (i: QueueItem) => ['RED', 'ORANGE', 'YELLOW', 'GREEN'].indexOf(i.triageLevel);
   return [...items].sort(
     (a, b) =>
@@ -372,6 +376,11 @@ export default function DoctorQueuePage() {
                         </span>
                       ) : (
                         <span className="tag">{item.isReturning ? 'Return' : 'New'}</span>
+                      )}
+                      {item.isLabReview && (
+                        <span className="tag tag-review" title="Back with lab results – the same consultation reopens">
+                          {item.queueStatus === 'WAITING' || item.queueStatus === 'IN_CONSULTATION' ? 'Results review' : 'Results reviewed'}
+                        </span>
                       )}
                       {item.isFollowUp && <span className="tag tag-follow">Free follow-up</span>}
                     </span>

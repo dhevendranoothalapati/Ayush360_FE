@@ -11,6 +11,7 @@ module work against the real HMS API (and the mock). Admin module planned: see `
 **Other docs in this folder:**
 - `FRONT-DESK-QUEUE-AND-APPOINTMENTS.md` – OP Queue, Inpatient Queue, cancel / change date, appointments and check-in
 - `ADMIN-MODULE-BACKLOG.md` – everything the Admin module must cover, including settings that are hard-coded today
+- `AI-ASSISTANT-PLAN.md` – AI front desk assistant: design, tools, data privacy, effort and running cost (not started)
 - `EMERGENCY-ICU-PROPOSAL.md` – Emergency and ICU entry design
 - Backend: `Ayush360_BE/docs/registration-queue-and-appointments.md`, `Ayush360_BE/docs/deployment-azure.md`
 
@@ -157,6 +158,7 @@ All endpoints are under `/api` and use a Bearer token. The tenant is resolved on
 | POST | `/registration/registrations` | Payment (omitted when the fee is 0) plus registration in one call. `{ patient }` = new patient; `{ patientId }` = existing; `{ patientId, patient }` also updates details. 409 if an open visit with that doctor already exists today |
 | POST | `/registration/registrations/{id}/check-in` | Booked patient arrived: `{ payment }` → fee, receipt, Waiting (token unchanged) |
 | POST | `/registration/registrations/{id}/cancel` | `{ reason, refund }`; Booked or Waiting only |
+| POST | `/registration/registrations/{id}/not-here` | `{ notHere }`; today's Waiting only; queue items carry `notHereAt` |
 | POST | `/registration/registrations/{id}/reschedule` | `{ date }`; OPD, today … +30 days; new token for that day |
 | GET | `/registration/queue?date=` | OP queue + `pending[]` (earlier unseen) + `doctors[]` board + `counts` |
 | GET | `/registration/inpatients` | Admitted patients + admission requests |
@@ -218,3 +220,5 @@ npm run build          # boundary check + type check + production build
 | Oct 2026 | Docker: one backend Dockerfile (identity, hms, migrator) + nginx frontend image; `deploy/docker-compose.yml`; Azure guide in the backend repo |
 | 21 Oct 2026 | Appointments: Visit date (up to 30 days), **Booked** state (token at booking, pay on arrival), **Phone appointment** visit type, check-in with fee, waiting line ordered by token number |
 | 21 Oct 2026 | `ADMIN-MODULE-BACKLOG.md` and `FRONT-DESK-QUEUE-AND-APPOINTMENTS.md` added |
+| 21 Oct 2026 | `AI-ASSISTANT-PLAN.md` added (analysis only) |
+| 21 Oct 2026 | OP Queue: next patient blinks "Send in now" when the doctor is free; Next patients tab; Not here (skip 15 min) / Here now; collapsible Pending section. Pending: real-time Call next, Doctor rooms board, TV display |

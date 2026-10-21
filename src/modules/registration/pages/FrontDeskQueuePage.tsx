@@ -6,6 +6,7 @@ import { formatMobile, formatTime } from '@/shared/utils/format';
 import { registrationApi } from '../api/registrationApi';
 import { PendingVisits } from '../components/PendingVisits';
 import { VisitActions } from '../components/VisitActions';
+import { LabResultActions } from '../components/LabResultActions';
 import { awayLabel } from '@/shared/utils/doctorAvailability';
 import type { FrontDeskDoctor, FrontDeskQueue, FrontDeskQueueCounts, FrontDeskQueueItem, QueueStatus } from '../types';
 import '../registration.css';
@@ -19,10 +20,11 @@ import '../registration.css';
  * Refreshes every 30 s; clicking a patient opens them on the Registration screen.
  */
 
-type Filter = 'ALL' | QueueStatus | 'AWAITING_RESULTS' | 'ACUTE';
+type Filter = 'ALL' | 'NEXT' | QueueStatus | 'AWAITING_RESULTS' | 'ACUTE';
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'ALL', label: 'All' },
+  { value: 'NEXT', label: 'Next patients' },
   { value: 'WAITING', label: 'Waiting' },
   { value: 'IN_CONSULTATION', label: 'With doctor' },
   { value: 'COMPLETED', label: 'Completed' },
@@ -88,9 +90,8 @@ const tokenNo = (i: { tokenNumber: string }) => Number(i.tokenNumber.replace(/\D
 /** Place in the doctor's line for waiting OP patients (1 = next). Emergencies are seen first and get no number. */
 function linePositions(items: FrontDeskQueueItem[]): Map<number, number> {
   const byDoctor = new Map<number, FrontDeskQueueItem[]>();
-  items
-    .filter((i) => i.queueStatus === 'WAITING' && !isAcute(i))
-    .sort((a, b) => tokenNo(a) - tokenNo(b))
+  // Same order as the line itself: lab results reviews first, then by token.
+  sortQueue(items.filter((i) => i.queueStatus === 'WAITING' && !isAcute(i)))
     .forEach((i) => byDoctor.set(i.doctorId, [...(byDoctor.get(i.doctorId) ?? []), i]));
   const out = new Map<number, number>();
   byDoctor.forEach((list) => list.forEach((i, idx) => out.set(i.visitId, idx + 1)));
@@ -143,11 +144,14 @@ function timeLines(item: FrontDeskQueueItem, isToday: boolean): { lines: string[
   };
 }
 
-/** Emergencies first (by triage), then waiting by token number, then with doctor, then finished (latest first). */
+/**
+ * Waiting line: 1) emergencies (by triage) 2) lab results reviews (by when they came back) 3) everyone else by
+ * token number. Then with doctor, then finished (latest first), then appointments not arrived.
+ */
 function sortQueue(items: FrontDeskQueueItem[]): FrontDeskQueueItem[] {
   const rank = (i: FrontDeskQueueItem) =>
     i.queueStatus === 'WAITING'
-      ? isAcute(i) ? 0 : 1
+      ? isAcute(i) ? 0 : i.isLabReview ? 0.5 : 1
       : i.queueStatus === 'IN_CONSULTATION' ? 2 : i.queueStatus === 'BOOKED' ? 4 : 3;
   const triage = (i: FrontDeskQueueItem) => {
     const t = ['RED', 'ORANGE', 'YELLOW', 'GREEN'].indexOf(i.triageLevel);
@@ -171,6 +175,44 @@ const AVG_BASIS: Record<FrontDeskDoctor['avgBasis'], string> = {
 
 /** If nobody has been seen for this long while patients wait, the desk is told (doctor may be with inpatients). */
 const IDLE_MINUTES = 20;
+
+/** Called but not there: skipped as "next" for this long, then back in line with their token (Admin setting later). */
+const NOT_HERE_MINUTES = 15;
+
+/** When a "not here" patient comes back into line, or null if they aren't marked (or the time has passed). */
+function notHereUntil(i: FrontDeskQueueItem): Date | null {
+  if (!i.notHereAt) return null;
+  const until = new Date(new Date(i.notHereAt).getTime() + NOT_HERE_MINUTES * 60000);
+  return until.getTime() > Date.now() ? until : null;
+}
+
+interface NextUp {
+  item: FrontDeskQueueItem;
+  /** Doctor is free right now (started OPD, not paused, nobody with them): send this patient in. */
+  sendNow: boolean;
+  doctorName: string;
+}
+
+/**
+ * Each doctor's next patient (emergencies first, then lowest token), skipping patients marked "not here" in the
+ * last 15 min. sendNow when the doctor has started OPD, isn't paused and has nobody with them.
+ */
+function nextPatients(items: FrontDeskQueueItem[], doctors: FrontDeskDoctor[]): Map<number, NextUp> {
+  const out = new Map<number, NextUp>();
+  doctors.forEach((d) => {
+    const next = sortQueue(items.filter((i) => i.doctorId === d.doctorId && i.queueStatus === 'WAITING')).find(
+      (i) => !notHereUntil(i),
+    );
+    if (!next) return;
+    const withDoctor = items.some((i) => i.doctorId === d.doctorId && i.queueStatus === 'IN_CONSULTATION');
+    out.set(d.doctorId, {
+      item: next,
+      sendNow: !d.availability.isAway && !withDoctor && Boolean(d.firstStartedAt),
+      doctorName: d.name,
+    });
+  });
+  return out;
+}
 
 interface Eta {
   /** Expected time to see the doctor, or null when it can't be estimated (doctor away without a return time). */
@@ -271,11 +313,13 @@ const TONE_ORDER = { away: 0, idle: 1, busy: 2, ok: 3 } as const;
 function DoctorStrip({
   board,
   items,
+  nextUp,
   selected,
   onSelect,
 }: {
   board: FrontDeskDoctor[];
   items: FrontDeskQueueItem[];
+  nextUp: Map<number, NextUp>;
   selected: number | 'ALL';
   onSelect: (id: number | 'ALL') => void;
 }) {
@@ -323,7 +367,7 @@ function DoctorStrip({
           <button
             type="button"
             key={d.doctorId}
-            className={`fq-doc tone-${st.tone}${selected === d.doctorId ? ' on' : ''}`}
+            className={`fq-doc tone-${st.tone}${selected === d.doctorId ? ' on' : ''}${nextUp.get(d.doctorId)?.sendNow ? ' fq-doc-sendnow' : ''}`}
             onClick={() => onSelect(selected === d.doctorId ? 'ALL' : d.doctorId)}
             aria-pressed={selected === d.doctorId}
             title="Show only this doctor's patients"
@@ -334,6 +378,12 @@ function DoctorStrip({
             </span>
             <span className="fq-doc-state">{st.title}</span>
             {st.sub && <small>{st.sub}</small>}
+            {nextUp.get(d.doctorId) && (
+              <span className={nextUp.get(d.doctorId)!.sendNow ? 'fq-doc-next send' : 'fq-doc-next'}>
+                {nextUp.get(d.doctorId)!.sendNow ? 'Send in now: ' : 'Next: '}
+                <b>{nextUp.get(d.doctorId)!.item.tokenNumber}</b> {nextUp.get(d.doctorId)!.item.patientName}
+              </span>
+            )}
             <span className="fq-doc-foot">
               <b>{waiting}</b> waiting · {d.seenToday} seen · ~{d.avgConsultMinutes} min/patient
               <small> ({AVG_BASIS[d.avgBasis]})</small>
@@ -369,7 +419,7 @@ export default function FrontDeskQueuePage() {
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   const isToday = date === todayIso();
   const isFuture = date > todayIso();
 
@@ -413,6 +463,35 @@ export default function FrontDeskQueuePage() {
   const positions = useMemo(() => linePositions(items), [items]);
   const board = useMemo(() => (isToday ? queue?.doctors ?? [] : []), [queue, isToday]);
   const etas = expectedTimes(items, board);
+  // Recomputed on every render (the 1-minute tick brings "not here" patients back into line on time).
+  const nextUp = nextPatients(items, board);
+  const nextIds = new Map<number, NextUp>([...nextUp.values()].map((n) => [n.item.visitId, n] as const));
+  const sendNowCount = [...nextUp.values()].filter((n) => n.sendNow).length;
+  const [marking, setMarking] = useState<number | null>(null);
+  /** A failed Not here / Here now, shown in red under that row's button. */
+  const [markError, setMarkError] = useState<{ visitId: number; message: string } | null>(null);
+
+  async function markNotHere(item: FrontDeskQueueItem, notHere: boolean) {
+    setMarking(item.visitId);
+    setMarkError(null);
+    try {
+      await registrationApi.markNotHere(item.visitId, notHere);
+      const back = new Date(Date.now() + NOT_HERE_MINUTES * 60000);
+      changed(
+        notHere
+          ? `${item.tokenNumber} ${item.patientName} is not here — skipped for now, back in line at ${formatTime(back.toISOString())}.`
+          : `${item.tokenNumber} ${item.patientName} is here — back in line with token ${item.tokenNumber}.`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      setMarkError({
+        visitId: item.visitId,
+        message: `Not saved${message ? `: ${message}` : ''}. Try again; if it keeps failing, the server may need a restart.`,
+      });
+    } finally {
+      setMarking(null);
+    }
+  }
 
   /** Doctors seen in today's list, with how many are still waiting for each. */
   const doctors = useMemo(() => {
@@ -433,9 +512,16 @@ export default function FrontDeskQueuePage() {
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const digits = q.replace(/\D/g, '');
-    return sortQueue(items).filter(
+    // "Next patients": each doctor's next patient, the ones to send in now first.
+    const base =
+      filter === 'NEXT'
+        ? [...nextPatients(items, board).values()]
+            .sort((a, b) => Number(b.sendNow) - Number(a.sendNow) || a.doctorName.localeCompare(b.doctorName))
+            .map((n) => n.item)
+        : sortQueue(items);
+    return base.filter(
       (i) =>
-        matchesFilter(i, filter) &&
+        (filter === 'NEXT' || matchesFilter(i, filter)) &&
         (doctorId === 'ALL' || i.doctorId === doctorId) &&
         (!q ||
           i.patientName.toLowerCase().includes(q) ||
@@ -443,7 +529,8 @@ export default function FrontDeskQueuePage() {
           i.patientNumber.toLowerCase().includes(q) ||
           (digits.length >= 3 && i.mobileNumber.includes(digits))),
     );
-  }, [items, filter, doctorId, search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, board, filter, doctorId, search, tick]);
 
   const counts: FrontDeskQueueCounts | undefined = queue
     ? {
@@ -544,7 +631,7 @@ export default function FrontDeskQueuePage() {
       )}
 
       {board.length > 0 && (
-        <DoctorStrip board={board} items={items} selected={doctorId} onSelect={setDoctorId} />
+        <DoctorStrip board={board} items={items} nextUp={nextUp} selected={doctorId} onSelect={setDoctorId} />
       )}
 
       <div className="card fq-card">
@@ -560,6 +647,11 @@ export default function FrontDeskQueuePage() {
                 onClick={() => setFilter(f.value)}
               >
                 {f.label}
+                {f.value === 'NEXT' && isToday && sendNowCount > 0 && (
+                  <span className="fq-chip-count fq-chip-count-send" title="Doctors free now">
+                    {sendNowCount}
+                  </span>
+                )}
                 {f.value === 'AWAITING_RESULTS' && counts && counts.awaitingLabResults > 0 && (
                   <span className="fq-chip-count">{counts.awaitingLabResults}</span>
                 )}
@@ -656,10 +748,14 @@ export default function FrontDeskQueuePage() {
               const t = timeLines(item, isToday);
               const place = positions.get(item.visitId);
               const feePending = item.registrationType === 'OP' && item.paymentStatus === 'UNPAID' && item.consultationFee > 0;
+              const up = isToday ? nextIds.get(item.visitId) : undefined;
+              const awayUntil = isToday && item.queueStatus === 'WAITING' ? notHereUntil(item) : null;
               return (
                 <li
                   key={item.visitId}
-                  className={`fq-item status-${item.queueStatus.toLowerCase()}${isAcute(item) ? ' fq-item-acute' : ''}`}
+                  className={`fq-item status-${item.queueStatus.toLowerCase()}${isAcute(item) ? ' fq-item-acute' : ''}${
+                    up?.sendNow ? ' fq-item-sendnow' : ''
+                  }${awayUntil ? ' fq-item-nothere' : ''}`}
                 >
                   <button
                     type="button"
@@ -685,6 +781,11 @@ export default function FrontDeskQueuePage() {
                         {item.source === 'PHONE' && (
                           <span className="fq-tag fq-tag-phone" title="Booked over the phone; fee collected on arrival">
                             Phone appointment
+                          </span>
+                        )}
+                        {item.isLabReview && (
+                          <span className="fq-tag fq-tag-review" title="Back with lab results: same token, no fee">
+                            {item.queueStatus === 'WAITING' || item.queueStatus === 'IN_CONSULTATION' ? 'Results review' : 'Results reviewed'}
                           </span>
                         )}
                         {item.isFollowUp && <span className="fq-tag fq-tag-follow">Free follow-up</span>}
@@ -720,9 +821,15 @@ export default function FrontDeskQueuePage() {
                       {item.queueStatus === 'BOOKED' && isToday && (
                         <small className="fq-line fq-checkin-hint">Open to check in &amp; collect fee</small>
                       )}
-                      {item.queueStatus === 'WAITING' && isToday && (
+                      {up?.sendNow && <span className="fq-sendnow">Send in now</span>}
+                      {awayUntil && (
+                        <small className="fq-line fq-nothere">
+                          Not here at {formatTime(item.notHereAt!)} · back in line {formatTime(awayUntil.toISOString())}
+                        </small>
+                      )}
+                      {item.queueStatus === 'WAITING' && isToday && !up?.sendNow && !awayUntil && (
                         <small className="fq-line">
-                          {isAcute(item) ? 'Seen first' : place === 1 ? 'Next in line' : place ? `${ordinal(place)} in line` : ''}
+                          {isAcute(item) ? 'Seen first' : up ? 'Next for this doctor' : place ? `${ordinal(place)} in line` : ''}
                         </small>
                       )}
                       {item.queueStatus === 'WAITING' && isToday && etas.get(item.visitId) && (() => {
@@ -746,14 +853,50 @@ export default function FrontDeskQueuePage() {
                         );
                       })()}
                       {item.labStatus === 'AWAITING_RESULTS' && <span className="fq-pill pill-awaiting_results">Awaiting lab results</span>}
+                      {item.labStatus === 'AWAITING_RESULTS' && (item.labResultsExpectedAt || item.labResultsExpectedLater) && (
+                        <small className="fq-line fq-lab-expected">
+                          {item.labResultsExpectedLater
+                            ? 'Results expected tomorrow or later'
+                            : `Results expected ~${formatTime(item.labResultsExpectedAt!)}`}
+                        </small>
+                      )}
                       {item.labStatus === 'RESULTS_READY' && <span className="fq-pill pill-results_ready">Lab results ready</span>}
+                      {item.labStatus === 'RESULTS_READY' && <small className="fq-line">Book a review when the patient comes</small>}
                       {item.followUpDate && <small className="fq-line">Review on {shortDate(item.followUpDate)}</small>}
                     </span>
                   </button>
                   {/* Today's patients still waiting: Change date / Cancel (the doctor hasn't started yet). */}
                   <span className="fq-item-actions">
-                    {(isToday || isFuture) && (item.queueStatus === 'WAITING' || item.queueStatus === 'BOOKED') && (
+                    {(isToday || isFuture) && (item.queueStatus === 'WAITING' || item.queueStatus === 'BOOKED') && !item.isLabReview && (
                       <VisitActions item={item} onChanged={changed} />
+                    )}
+                    {item.labStatus === 'AWAITING_RESULTS' && <LabResultActions item={item} onChanged={changed} />}
+                    {up && !awayUntil && (
+                      <button
+                        type="button"
+                        className="fq-mini-btn"
+                        onClick={() => void markNotHere(item, true)}
+                        disabled={marking === item.visitId}
+                        title={`Called but not there: skip for ${NOT_HERE_MINUTES} min, then back in line`}
+                      >
+                        Not here
+                      </button>
+                    )}
+                    {awayUntil && (
+                      <button
+                        type="button"
+                        className="fq-mini-btn on"
+                        onClick={() => void markNotHere(item, false)}
+                        disabled={marking === item.visitId}
+                        title="The patient is back: put them back in line now"
+                      >
+                        Here now
+                      </button>
+                    )}
+                    {markError?.visitId === item.visitId && (
+                      <small className="fq-mark-error" role="alert">
+                        {markError.message}
+                      </small>
                     )}
                   </span>
                 </li>

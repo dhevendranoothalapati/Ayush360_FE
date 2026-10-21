@@ -92,6 +92,9 @@ export default function ConsultationPage() {
   const { data, form, errors, editable } = c;
   const { patient, visit, encounter } = data;
   const completed = encounter?.status === 'COMPLETED';
+  /** Back with lab results: the completed consultation is reopened for review. */
+  const reviewWaiting = completed && data.canStart; // in the line, not opened yet
+  const reviewing = completed && visit.queueStatus === 'IN_CONSULTATION';
   // Saved tests only (what the lab actually received).
   const labStatus = labStatusOf(visit.queueStatus, encounter?.labOrders ?? []);
   const pendingTests = (encounter?.labOrders ?? []).filter((o) => o.status === 'ORDERED' || o.status === 'SAMPLE_COLLECTED');
@@ -171,7 +174,23 @@ export default function ConsultationPage() {
 
       {c.formError && <div className="alert alert-error" role="alert">{c.formError}</div>}
 
-      {completed && (
+      {(reviewWaiting || reviewing) && (
+        <div className="alert alert-info cx-review" role="status">
+          <Icon name="lab" size={18} />
+          <span>
+            <strong>Lab results review.</strong> {patient.name.split(' ')[0]} is back with the results (paper report). Review
+            them, update the diagnosis or prescription if needed (kept as an edit of this consultation), then{' '}
+            <b>Complete review</b>.
+          </span>
+          {reviewWaiting && (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void c.start()} disabled={c.busy !== null}>
+              {c.busy === 'start' ? 'Opening…' : 'Start review'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {completed && !reviewing && !reviewWaiting && (
         <div className="alert alert-success cx-done" role="status">
           <Icon name="check" size={18} />
           <span>
@@ -480,7 +499,16 @@ export default function ConsultationPage() {
               Undo changes
             </button>
           )}
-          {completed ? (
+          {reviewing ? (
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => void c.save()} disabled={c.busy !== null || !c.dirty}>
+                {c.busy === 'save' ? 'Saving…' : 'Save'}
+              </button>
+              <button type="button" className="btn btn-primary" onClick={() => void complete()} disabled={c.busy !== null}>
+                <Icon name="check" size={18} /> {c.busy === 'complete' ? 'Completing…' : 'Complete review'}
+              </button>
+            </>
+          ) : completed ? (
             <button type="button" className="btn btn-primary" onClick={() => void c.save()} disabled={c.busy !== null || !c.dirty}>
               {c.busy === 'save' ? 'Saving…' : 'Save corrections'}
             </button>
