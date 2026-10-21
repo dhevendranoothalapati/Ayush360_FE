@@ -4,13 +4,15 @@
  * and doctors only ever get their own patients.
  */
 
-export type QueueStatus = 'WAITING' | 'IN_CONSULTATION' | 'COMPLETED' | 'ADMISSION_REQUESTED' | 'CONVERTED_TO_INPATIENT';
+/** BOOKED (appointment not checked in) never reaches the doctor's queue; listed so the types match the front desk's. */
+export type QueueStatus = 'BOOKED' | 'WAITING' | 'IN_CONSULTATION' | 'COMPLETED' | 'ADMISSION_REQUESTED' | 'CONVERTED_TO_INPATIENT';
 export type RegistrationType = 'OP' | 'IP' | 'EMERGENCY' | 'ICU';
 export type EncounterStatus = 'IN_PROGRESS' | 'COMPLETED';
 export type MedicineTiming = 'BEFORE_FOOD' | 'AFTER_FOOD' | 'WITH_FOOD' | 'EMPTY_STOMACH' | 'BEDTIME';
 export type AdmissionType = 'WARD' | 'ICU' | 'HDU' | 'DAY_CARE';
 
 export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
+  BOOKED: 'Booked',
   WAITING: 'Waiting',
   IN_CONSULTATION: 'In consultation',
   COMPLETED: 'Completed',

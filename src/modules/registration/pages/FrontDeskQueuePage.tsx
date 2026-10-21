@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type WheelEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useCurrentUser } from '@/core/authentication/AuthContext';
 import { Icon, type IconName } from '@/shared/components/Icons';
 import { formatMobile, formatTime } from '@/shared/utils/format';
 import { registrationApi } from '../api/registrationApi';
-import { InpatientView } from '../components/InpatientView';
+import { PendingVisits } from '../components/PendingVisits';
+import { VisitActions } from '../components/VisitActions';
 import { awayLabel } from '@/shared/utils/doctorAvailability';
 import type { FrontDeskDoctor, FrontDeskQueue, FrontDeskQueueCounts, FrontDeskQueueItem, QueueStatus } from '../types';
 import '../registration.css';
 
 /**
- * Front Desk: Patient queue, in two views (?view=opd | ?view=inp):
- *  - OPD: everyone registered for the day (OP + Emergency), all doctors, with where they are now:
- * waiting (and their place in the doctor's line), with the doctor, completed, lab results pending,
- * admission requested. No diagnosis or other clinical details are shown here.
- *  - Inpatients: everyone currently admitted, whatever the admission date (InpatientView).
+ * Front Desk → OP Queue: everyone registered for the day (OPD + Emergency), all doctors, with where they are now:
+ * waiting (and their place in the doctor's line), with the doctor, completed, lab results pending, admission
+ * requested. No diagnosis or other clinical details. Admitted patients (IP / ICU) are on the Inpatient Queue page.
+ * On today's queue, OPD visits of earlier days the doctor never saw come first ("Pending from earlier days"):
+ * the desk moves them to today / another day or cancels them (PendingVisits).
  * Refreshes every 30 s; clicking a patient opens them on the Registration screen.
  */
 
@@ -28,10 +29,12 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'ADMISSION_REQUESTED', label: 'Admission requested' },
   { value: 'AWAITING_RESULTS', label: 'Awaiting lab results' },
   { value: 'ACUTE', label: 'Emergency' },
+  { value: 'BOOKED', label: 'Appointments' },
 ];
 
 /** Front desk wording: "With doctor" reads better at the counter than "In consultation". */
 const STATUS_LABEL: Record<QueueStatus, string> = {
+  BOOKED: 'Booked · pay on arrival',
   WAITING: 'Waiting',
   IN_CONSULTATION: 'With doctor',
   COMPLETED: 'Completed',
@@ -42,8 +45,12 @@ const STATUS_LABEL: Record<QueueStatus, string> = {
 const ADMISSION_LABEL: Record<string, string> = { WARD: 'Ward', ICU: 'ICU', HDU: 'HDU', DAY_CARE: 'Day care' };
 const GENDER_SHORT: Record<string, string> = { MALE: 'M', FEMALE: 'F', OTHER: 'O' };
 
-const todayIso = () => {
+/** How far ahead appointments can be booked (and looked at here). */
+const BOOKING_MAX_DAYS = 30;
+
+const todayIso = (offsetDays = 0) => {
   const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
@@ -75,12 +82,15 @@ function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
+/** Token number as a number ("A-012" → 12): the doctor's line goes by token, so a booked patient keeps their place. */
+const tokenNo = (i: { tokenNumber: string }) => Number(i.tokenNumber.replace(/\D/g, '')) || 0;
+
 /** Place in the doctor's line for waiting OP patients (1 = next). Emergencies are seen first and get no number. */
 function linePositions(items: FrontDeskQueueItem[]): Map<number, number> {
   const byDoctor = new Map<number, FrontDeskQueueItem[]>();
   items
     .filter((i) => i.queueStatus === 'WAITING' && !isAcute(i))
-    .sort((a, b) => a.registeredAt.localeCompare(b.registeredAt))
+    .sort((a, b) => tokenNo(a) - tokenNo(b))
     .forEach((i) => byDoctor.set(i.doctorId, [...(byDoctor.get(i.doctorId) ?? []), i]));
   const out = new Map<number, number>();
   byDoctor.forEach((list) => list.forEach((i, idx) => out.set(i.visitId, idx + 1)));
@@ -93,7 +103,23 @@ function waitLevel(m: number | null): '' | 'wait-long' | 'wait-very-long' {
   return m < 60 ? 'wait-long' : 'wait-very-long';
 }
 
-function timeLines(item: FrontDeskQueueItem): { lines: string[]; level: string } {
+function timeLines(item: FrontDeskQueueItem, isToday: boolean): { lines: string[]; level: string } {
+  // Appointment: booked on registeredAt's day; not in the doctor's line until checked in.
+  if (item.queueStatus === 'BOOKED') {
+    const past = item.visitDate < todayIso();
+    return {
+      lines: [`Booked ${shortDate(item.registeredAt)}`, past ? 'Did not come' : isToday ? 'Not arrived yet' : 'Pay on arrival'],
+      level: past ? 'wait-very-long' : '',
+    };
+  }
+  // A later day: paid visit moved ahead by the desk.
+  if (item.queueStatus === 'WAITING' && item.visitDate > todayIso()) {
+    return { lines: ['Scheduled (paid)'], level: '' };
+  }
+  // Looking at an earlier day: a patient still "waiting" was never seen; hours since then mean nothing.
+  if (item.queueStatus === 'WAITING' && !isToday) {
+    return { lines: ['Not seen by doctor'], level: 'wait-very-long' };
+  }
   if (item.queueStatus === 'WAITING') {
     const m = minutesSince(item.registeredAt);
     return { lines: m === null ? [] : [`Waiting ${duration(m)}`], level: waitLevel(m) };
@@ -117,10 +143,12 @@ function timeLines(item: FrontDeskQueueItem): { lines: string[]; level: string }
   };
 }
 
-/** Emergencies first (by triage), then waiting by arrival, then with doctor, then finished (latest first). */
+/** Emergencies first (by triage), then waiting by token number, then with doctor, then finished (latest first). */
 function sortQueue(items: FrontDeskQueueItem[]): FrontDeskQueueItem[] {
   const rank = (i: FrontDeskQueueItem) =>
-    i.queueStatus === 'WAITING' ? (isAcute(i) ? 0 : 1) : i.queueStatus === 'IN_CONSULTATION' ? 2 : 3;
+    i.queueStatus === 'WAITING'
+      ? isAcute(i) ? 0 : 1
+      : i.queueStatus === 'IN_CONSULTATION' ? 2 : i.queueStatus === 'BOOKED' ? 4 : 3;
   const triage = (i: FrontDeskQueueItem) => {
     const t = ['RED', 'ORANGE', 'YELLOW', 'GREEN'].indexOf(i.triageLevel);
     return t < 0 ? 4 : t;
@@ -129,6 +157,7 @@ function sortQueue(items: FrontDeskQueueItem[]): FrontDeskQueueItem[] {
     const r = rank(a) - rank(b);
     if (r) return r;
     if (rank(a) === 0) return triage(a) - triage(b) || a.registeredAt.localeCompare(b.registeredAt);
+    if (rank(a) === 1 || rank(a) === 4) return tokenNo(a) - tokenNo(b);
     if (rank(a) === 3) return (b.completedAt ?? b.registeredAt).localeCompare(a.completedAt ?? a.registeredAt);
     return a.registeredAt.localeCompare(b.registeredAt);
   });
@@ -328,35 +357,7 @@ function matchesFilter(i: FrontDeskQueueItem, f: Filter): boolean {
   return i.queueStatus === f;
 }
 
-/** OPD | Inpatients switch at the top of the page. */
-function ViewSwitch({ view, onChange, inpatients }: { view: 'opd' | 'inp'; onChange: (v: 'opd' | 'inp') => void; inpatients?: number }) {
-  return (
-    <div className="fq-views" role="tablist" aria-label="Patient type">
-      <button type="button" role="tab" aria-selected={view === 'opd'} className={view === 'opd' ? 'on' : ''} onClick={() => onChange('opd')}>
-        <Icon name="queue" size={18} /> OPD
-      </button>
-      <button type="button" role="tab" aria-selected={view === 'inp'} className={view === 'inp' ? 'on' : ''} onClick={() => onChange('inp')}>
-        <Icon name="discharge" size={18} /> Inpatients
-        {inpatients !== undefined && <span className="fq-view-count">{inpatients}</span>}
-      </button>
-    </div>
-  );
-}
-
 export default function FrontDeskQueuePage() {
-  const [params, setParams] = useSearchParams();
-  const view = params.get('view') === 'inp' ? 'inp' : 'opd';
-  const setView = (v: 'opd' | 'inp') => setParams(v === 'opd' ? {} : { view: v }, { replace: true });
-  return (
-    <div className="fq-page">
-      <ViewSwitch view={view} onChange={setView} />
-      {view === 'inp' ? <InpatientView /> : <OpdQueue />}
-    </div>
-  );
-}
-
-/** Opd view: one day's outpatients and emergencies. Inpatients (IP / ICU) are in the Inpatients view. */
-function OpdQueue() {
   const user = useCurrentUser();
   const navigate = useNavigate();
   const [date, setDate] = useState(todayIso);
@@ -367,8 +368,10 @@ function OpdQueue() {
   const [doctorId, setDoctorId] = useState<number | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const isToday = date === todayIso();
+  const isFuture = date > todayIso();
 
   const load = useCallback(async () => {
     try {
@@ -444,7 +447,8 @@ function OpdQueue() {
 
   const counts: FrontDeskQueueCounts | undefined = queue
     ? {
-        total: items.length,
+        total: items.filter((i) => i.queueStatus !== 'BOOKED').length,
+        booked: items.filter((i) => i.queueStatus === 'BOOKED').length,
         waiting: items.filter((i) => i.queueStatus === 'WAITING').length,
         inConsultation: items.filter((i) => i.queueStatus === 'IN_CONSULTATION').length,
         completed: items.filter((i) => i.queueStatus === 'COMPLETED').length,
@@ -468,18 +472,25 @@ function OpdQueue() {
     { label: 'Admission requested', value: counts?.admissionRequested, icon: 'discharge', filter: 'ADMISSION_REQUESTED' },
   ];
 
+  /** After Move / Change date / Cancel: show what happened and reload the lists. */
+  function changed(message: string) {
+    setNotice(message);
+    void load();
+  }
+
   function open(item: FrontDeskQueueItem) {
     navigate('/registration', { state: { patientId: item.patientId } });
   }
 
   return (
-    <>
-      <section className="fd-hero" aria-label="Patient queue overview">
+    <div className="fq-page">
+      <section className="fd-hero" aria-label="OP queue overview">
         <div className="fd-hero-text">
-          <span className="fd-hero-kicker">OPD queue · {user.tenant.name}</span>
+          <span className="fd-hero-kicker">OP queue · {user.tenant.name}</span>
           <h1 className="fd-hero-title">{isToday ? 'Today’s OPD patients' : longDate(date)}</h1>
           <p className="fq-hero-sub">
-            {counts ? `${counts.total} registered` : 'Loading…'}
+            {counts ? (isFuture ? `${counts.booked} appointments booked` : `${counts.total} registered`) : 'Loading…'}
+            {counts && !isFuture && counts.booked > 0 && ` · ${counts.booked} ${isToday ? 'appointments not arrived yet' : 'appointments missed'}`}
             {counts && counts.emergency > 0 && ` · ${counts.emergency} emergency`}
           </p>
           {items.length > 0 && (
@@ -518,6 +529,19 @@ function OpdQueue() {
           ))}
         </div>
       </section>
+
+      {notice && (
+        <div className="alert alert-success fq-notice" role="status">
+          <span>{notice}</span>
+          <button type="button" className="icon-btn" onClick={() => setNotice(null)} aria-label="Dismiss">
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+      )}
+
+      {isToday && queue && (
+        <PendingVisits items={queue.pending ?? []} onChanged={changed} />
+      )}
 
       {board.length > 0 && (
         <DoctorStrip board={board} items={items} selected={doctorId} onSelect={setDoctorId} />
@@ -576,7 +600,7 @@ function OpdQueue() {
               className="input fq-date"
               type="date"
               value={date}
-              max={todayIso()}
+              max={todayIso(BOOKING_MAX_DAYS)}
               onChange={(e) => setDate(e.target.value || todayIso())}
               aria-label="Queue date"
             />
@@ -619,7 +643,9 @@ function OpdQueue() {
             {items.length === 0
               ? isToday
                 ? 'No patients registered yet today.'
-                : 'No patients were registered on this day.'
+                : isFuture
+                  ? 'No appointments booked for this day yet.'
+                  : 'No patients were registered on this day.'
               : 'No patients match this filter.'}
           </p>
         )}
@@ -627,11 +653,14 @@ function OpdQueue() {
         {rows.length > 0 && (
           <ul className="fq-list">
             {rows.map((item) => {
-              const t = timeLines(item);
+              const t = timeLines(item, isToday);
               const place = positions.get(item.visitId);
               const feePending = item.registrationType === 'OP' && item.paymentStatus === 'UNPAID' && item.consultationFee > 0;
               return (
-                <li key={item.visitId}>
+                <li
+                  key={item.visitId}
+                  className={`fq-item status-${item.queueStatus.toLowerCase()}${isAcute(item) ? ' fq-item-acute' : ''}`}
+                >
                   <button
                     type="button"
                     className={`fq-row status-${item.queueStatus.toLowerCase()}${isAcute(item) ? ' fq-row-acute' : ''}`}
@@ -653,7 +682,17 @@ function OpdQueue() {
                         )}
                         {item.registrationType === 'ICU' && <span className="fq-tag fq-tag-icu">ICU</span>}
                         <span className="fq-tag">{item.isReturning ? 'Return' : 'New'}</span>
+                        {item.source === 'PHONE' && (
+                          <span className="fq-tag fq-tag-phone" title="Booked over the phone; fee collected on arrival">
+                            Phone appointment
+                          </span>
+                        )}
                         {item.isFollowUp && <span className="fq-tag fq-tag-follow">Free follow-up</span>}
+                        {item.rescheduledFrom && (
+                          <span className="fq-tag fq-tag-moved" title="Moved by the front desk from an earlier day">
+                            Moved from {shortDate(item.rescheduledFrom)}
+                          </span>
+                        )}
                         {item.payerType === 'INSURANCE' && <span className="fq-tag">Insurance</span>}
                         {feePending && <span className="fq-tag fq-tag-warn">Fee pending</span>}
                       </span>
@@ -678,6 +717,9 @@ function OpdQueue() {
                           ? ` · ${ADMISSION_LABEL[item.admissionType] ?? item.admissionType}`
                           : ''}
                       </span>
+                      {item.queueStatus === 'BOOKED' && isToday && (
+                        <small className="fq-line fq-checkin-hint">Open to check in &amp; collect fee</small>
+                      )}
                       {item.queueStatus === 'WAITING' && isToday && (
                         <small className="fq-line">
                           {isAcute(item) ? 'Seen first' : place === 1 ? 'Next in line' : place ? `${ordinal(place)} in line` : ''}
@@ -708,12 +750,18 @@ function OpdQueue() {
                       {item.followUpDate && <small className="fq-line">Review on {shortDate(item.followUpDate)}</small>}
                     </span>
                   </button>
+                  {/* Today's patients still waiting: Change date / Cancel (the doctor hasn't started yet). */}
+                  <span className="fq-item-actions">
+                    {(isToday || isFuture) && (item.queueStatus === 'WAITING' || item.queueStatus === 'BOOKED') && (
+                      <VisitActions item={item} onChanged={changed} />
+                    )}
+                  </span>
                 </li>
               );
             })}
           </ul>
         )}
       </div>
-    </>
+    </div>
   );
 }

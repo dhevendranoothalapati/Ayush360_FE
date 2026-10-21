@@ -88,7 +88,13 @@ function daySummary(items: QueueItem[]) {
   return { seen: finished.length, avgWait: avg(waits), avgConsult: avg(consults), lastSeenAt: last };
 }
 
-/** Order: in consultation first, then emergencies (by triage), then waiting by arrival, then finished. */
+/** Token number as a number ("A-012" → 12). */
+const tokenNo = (i: QueueItem) => Number(i.tokenNumber.replace(/\D/g, '')) || 0;
+
+/**
+ * Order: in consultation first, then emergencies (by triage), then OPD waiting by token number (a patient who booked
+ * ahead keeps their place once checked in), then finished.
+ */
 function sortQueue(items: QueueItem[]): QueueItem[] {
   const rank = (i: QueueItem) =>
     i.queueStatus === 'IN_CONSULTATION' ? 0 : i.queueStatus === 'WAITING' ? (i.registrationType === 'OP' ? 2 : 1) : 3;
@@ -97,6 +103,7 @@ function sortQueue(items: QueueItem[]): QueueItem[] {
     (a, b) =>
       rank(a) - rank(b) ||
       (rank(a) === 1 ? triage(a) - triage(b) : 0) ||
+      (rank(a) === 2 ? tokenNo(a) - tokenNo(b) : 0) ||
       new Date(a.registeredAt).getTime() - new Date(b.registeredAt).getTime(),
   );
 }

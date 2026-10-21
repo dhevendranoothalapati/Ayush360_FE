@@ -1,7 +1,7 @@
 import { Modules, Permissions } from '@/core/permissions/permissions';
 import type { ModuleManifest } from '@/core/modules/types';
 
-/** Front Desk: patient registration and patient queue. */
+/** Front Desk: patient registration, OP queue and inpatient queue. */
 export const registrationModule: ModuleManifest = {
   code: Modules.REGISTRATION,
   name: 'Front Desk',
@@ -16,7 +16,13 @@ export const registrationModule: ModuleManifest = {
       icon: 'registration',
       permissions: [Permissions.REGISTRATION_CREATE],
     },
-    { label: 'Patient Queue', path: '/registration/queue', icon: 'queue', permissions: [Permissions.QUEUE_VIEW] },
+    { label: 'OP Queue', path: '/registration/queue', icon: 'queue', permissions: [Permissions.QUEUE_VIEW] },
+    {
+      label: 'Inpatient Queue',
+      path: '/registration/inpatients',
+      icon: 'discharge',
+      permissions: [Permissions.QUEUE_VIEW],
+    },
   ],
   load: () => import('./index'),
 };

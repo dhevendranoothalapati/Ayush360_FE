@@ -91,4 +91,8 @@ docs/         PROJECT-OVERVIEW.md (decisions, workflow, API, change log) + scree
   (compare sizes/contents) — partial or stale writes have happened before.
 - After each user-visible change: test the flow (desktop + phone width), then add a row to the change log in
   `docs/PROJECT-OVERVIEW.md` and update README/API tables if endpoints changed.
+- Keep `docs/` current: front desk queue / appointment behaviour in `docs/FRONT-DESK-QUEUE-AND-APPOINTMENTS.md`;
+  anything an admin should configure later (a hard-coded rule, list or limit) goes into section 3 of
+  `docs/ADMIN-MODULE-BACKLOG.md` with where it lives in the code; agreed Admin features go there too.
+  Backend behaviour/endpoints go in `Ayush360_BE/docs/`.
 - Keep replies to the user short and non-technical; they review in the browser.

@@ -85,6 +85,7 @@ function acuteOf(r: Partial<AcuteFields>): AcuteFields {
 function toVisitInput(r: Registration): VisitInput {
   return {
     ...acuteOf(r),
+    visitDate: '', // an open visit is always today's
     depositAmount: r.depositAmount ? String(r.depositAmount) : '',
     departmentId: r.departmentId,
     doctorId: r.doctorId,
@@ -105,7 +106,8 @@ function newVisitFor(lastVisit: Registration | null): VisitInput {
 function cleanVisit(v: VisitInput): VisitInput {
   const registrationType = v.source === 'EMERGENCY' ? 'EMERGENCY' : v.source === 'ICU' ? 'ICU' : 'OP';
   let out: VisitInput = { ...v, registrationType };
-  if (!isAcuteSource(v.source)) out = { ...out, ...EMPTY_ACUTE, depositAmount: '' };
+  if (isAcuteSource(v.source)) out = { ...out, visitDate: '' }; // Emergency / ICU is always today
+  else out = { ...out, ...EMPTY_ACUTE, depositAmount: '' };
   if (v.source === 'EMERGENCY') out = { ...out, icuUnit: '', bedNumber: '', admissionSource: '', referredFrom: '' };
   if (v.source === 'ICU') out = { ...out, triageLevel: '' };
   if (!out.isMlc) out = { ...out, policeStation: '', firNumber: '' };
@@ -142,8 +144,29 @@ export function validatePatient(p: PatientInput, emergency = false): FieldErrors
   return e;
 }
 
+/** Appointments: from tomorrow up to this many days ahead (same limit on the server). */
+export const BOOKING_MAX_DAYS = 30;
+
+export const localIsoDate = (offsetDays = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/** True when the visit is an appointment (pay on arrival): a later date, or booked over the phone (even for today). */
+export const isBooking = (v: VisitInput) =>
+  !isAcuteSource(v.source) && (v.source === 'PHONE' || (!!v.visitDate && v.visitDate > localIsoDate()));
+
+/** The day a new visit is for (yyyy-mm-dd); '' in the form means today. */
+export const visitDayOf = (v: VisitInput) => v.visitDate || localIsoDate();
+
 export function validateVisit(v: VisitInput): FieldErrors {
   const e: FieldErrors = {};
+  if (v.visitDate && !isAcuteSource(v.source)) {
+    if (v.visitDate < localIsoDate()) e.visitDate = 'Choose today or a later date';
+    else if (v.visitDate > localIsoDate(BOOKING_MAX_DAYS))
+      e.visitDate = `Appointments can be booked up to ${BOOKING_MAX_DAYS} days ahead`;
+  }
   if (v.departmentId === '') e.departmentId = 'Select a department';
   if (v.doctorId === '') e.doctorId = 'Select a doctor';
   if (isBlank(v.reasonForVisit)) e.reasonForVisit = 'Reason for visit is required';
@@ -283,7 +306,7 @@ export function useRegistrationForm() {
     }
     let cancelled = false;
     registrationApi
-      .getFeeQuote(visit.doctorId, patientId)
+      .getFeeQuote(visit.doctorId, patientId, isBooking(visit) ? visit.visitDate : undefined)
       .then((q) => {
         if (!cancelled) setFeeQuote(q);
       })
@@ -293,7 +316,8 @@ export function useRegistrationForm() {
     return () => {
       cancelled = true;
     };
-  }, [visit.doctorId, patientId, openVisit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visit.doctorId, patientId, openVisit, visit.visitDate, visit.source]);
 
   const selectedDepartment = useMemo(
     () => departments.find((d) => d.id === visit.departmentId) ?? null,
@@ -342,6 +366,18 @@ export function useRegistrationForm() {
 
   // ---------- patient selection ----------
   /** Load a patient from search: details + today's open visit (if any) into the same form. */
+  const loadPatient = useCallback(async (patientId: number, showVisitId?: number) => {
+    const ctx = await registrationApi.getPatientContext(patientId);
+    setSelectedPatient(ctx.patient);
+    setPatient(toPatientInput(ctx.patient));
+    setLastVisit(ctx.lastVisit);
+    setOpenVisits(ctx.openVisits);
+    setVisitHistory(ctx.visits);
+    const first = ctx.openVisits.find((v) => v.registration.id === showVisitId) ?? ctx.openVisits[0] ?? null;
+    setOpenVisit(first);
+    setVisit(first ? toVisitInput(first.registration) : newVisitFor(ctx.lastVisit));
+  }, []);
+
   const selectPatient = useCallback(async (p: Patient) => {
     setLoadingPatient(true);
     setErrors({});
@@ -349,21 +385,36 @@ export function useRegistrationForm() {
     setNotice(null);
     setResult(null);
     try {
-      const ctx = await registrationApi.getPatientContext(p.id);
-      setSelectedPatient(ctx.patient);
-      setPatient(toPatientInput(ctx.patient));
-      setLastVisit(ctx.lastVisit);
-      setOpenVisits(ctx.openVisits);
-      setVisitHistory(ctx.visits);
-      const first = ctx.openVisits[0] ?? null;
-      setOpenVisit(first);
-      setVisit(first ? toVisitInput(first.registration) : newVisitFor(ctx.lastVisit));
+      await loadPatient(p.id);
     } catch (e) {
       setFormError(e instanceof ApiError ? e.message : 'Could not load the patient.');
     } finally {
       setLoadingPatient(false);
     }
-  }, []);
+  }, [loadPatient]);
+
+  /**
+   * Patient with today's appointment arrived: fee (if any) + today's token in one server call.
+   * The visit then opens in the form like a normal registration (success banner, receipt). Throws for the payment dialog.
+   */
+  const checkIn = useCallback(
+    async (registrationId: number, payment?: PaymentInput) => {
+      setSaving(true);
+      try {
+        const res = await registrationApi.checkIn(registrationId, payment);
+        await loadPatient(res.patient.id, res.registration.id);
+        setResult(res);
+        setErrors({});
+        setFormError(null);
+        setNotice(null);
+        refreshSummary();
+        return res;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadPatient, refreshSummary],
+  );
 
   /** Clear everything and start a new patient. */
   const reset = useCallback(() => {
@@ -440,11 +491,18 @@ export function useRegistrationForm() {
         setResult(res);
         setSelectedPatient(res.patient);
         setPatient(toPatientInput(res.patient));
-        const created: OpenVisit = { registration: res.registration, receipt: res.receipt };
-        setOpenVisit(created);
-        setOpenVisits((list) => [created, ...list]);
-        setVisitHistory((list) => [res.registration, ...list]);
-        setVisit(toVisitInput(res.registration));
+        if (res.registration.queueStatus === 'BOOKED') {
+          // Appointment: not in today's queue yet. It shows in the patient's appointments; the form is ready for another visit.
+          setVisitHistory((list) => [res.registration, ...list]);
+          setOpenVisit(null);
+          setVisit(newVisitFor(res.registration));
+        } else {
+          const created: OpenVisit = { registration: res.registration, receipt: res.receipt };
+          setOpenVisit(created);
+          setOpenVisits((list) => [created, ...list]);
+          setVisitHistory((list) => [res.registration, ...list]);
+          setVisit(toVisitInput(res.registration));
+        }
         setFormError(null);
         sessionStorage.removeItem(draftKey(user.id));
         setDraftSavedAt(null);
@@ -571,6 +629,7 @@ export function useRegistrationForm() {
     updatePatient,
     updateVisit,
     selectPatient,
+    checkIn,
     reset,
     startNewVisit,
     validateAll,

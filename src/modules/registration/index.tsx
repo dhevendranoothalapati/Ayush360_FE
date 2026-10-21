@@ -8,6 +8,7 @@ import { PageLoader } from '@/shared/components/PageLoader';
 
 const RegistrationPage = lazy(() => import('./pages/RegistrationPage'));
 const FrontDeskQueuePage = lazy(() => import('./pages/FrontDeskQueuePage'));
+const InpatientQueuePage = lazy(() => import('./pages/InpatientQueuePage'));
 
 /** Front Desk module (registration + patient queue), mounted at /registration/* */
 export default function RegistrationModule() {
@@ -30,6 +31,14 @@ export default function RegistrationModule() {
           element={
             <RequirePermission permissions={[Permissions.QUEUE_VIEW]} fallback={<AccessDenied />}>
               <FrontDeskQueuePage />
+            </RequirePermission>
+          }
+        />
+        <Route
+          path="inpatients"
+          element={
+            <RequirePermission permissions={[Permissions.QUEUE_VIEW]} fallback={<AccessDenied />}>
+              <InpatientQueuePage />
             </RequirePermission>
           }
         />

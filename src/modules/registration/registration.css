@@ -1794,3 +1794,457 @@
   background: var(--green-50);
   color: var(--green);
 }
+
+/* ---------- OP Queue: action message ---------- */
+.fq-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  background: var(--green-50);
+  color: #146c3e;
+  border: 1px solid #bfe6cf;
+}
+
+/* ---------- OP Queue: pending from earlier days ---------- */
+.fq-pending {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid #f3d9a6;
+  border-left: 5px solid var(--amber);
+  background: #fffaf0;
+}
+.fq-pending-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.fq-pending-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fq-pending-head p {
+  margin: 2px 0 0;
+  color: var(--ink-2);
+  font-size: 0.88rem;
+}
+.fq-pending-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--amber-50);
+  color: #b26a00;
+}
+.fq-pending-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: var(--amber);
+  color: #fff;
+}
+.fq-pending-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.fq-pending-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1.3fr) minmax(0, 1.2fr) auto;
+  gap: 12px 14px;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.fq-pending-when {
+  display: grid;
+  gap: 2px;
+}
+.fq-pending-when strong {
+  color: #8a5a00;
+}
+.fq-pending-when small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.fq-pending-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.fq-pending-error {
+  grid-column: 1 / -1;
+  color: var(--danger);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.fq-pending-more {
+  justify-self: start;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.fq-danger {
+  color: var(--danger);
+}
+.fq-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+}
+.btn.fq-danger-solid {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.fq-tag-moved {
+  background: var(--amber-50);
+  color: #8a5a00;
+  border-color: transparent;
+}
+.fq-dialog-text {
+  margin: 0;
+  color: var(--ink-2);
+}
+.fq-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fq-refund {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--amber-50);
+  cursor: pointer;
+}
+.fq-refund input {
+  margin-top: 3px;
+}
+.fq-refund small {
+  display: block;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+@media (max-width: 1100px) {
+  .fq-pending-row {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+  .fq-pending-row .fq-doctor-cell,
+  .fq-pending-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+}
+
+/* ---------- "⋮" actions menu (pending visits) ---------- */
+.fq-menu {
+  position: relative;
+}
+.fq-menu-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.fq-menu-btn:hover:not(:disabled),
+.fq-menu-btn[aria-expanded='true'] {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--primary);
+}
+.fq-menu-btn:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.fq-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 190px;
+  display: grid;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 28px rgba(13, 43, 69, 0.16);
+}
+.fq-menu-list button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fq-menu-list button:hover,
+.fq-menu-list button:focus-visible {
+  background: var(--primary-50);
+  outline: none;
+}
+.fq-menu-list button svg {
+  color: var(--primary);
+}
+.fq-menu-list button.danger {
+  color: var(--danger);
+}
+.fq-menu-list button.danger svg {
+  color: var(--danger);
+}
+.fq-menu-list button.danger:hover {
+  background: var(--danger-bg);
+}
+
+/* Queue rows: the box is the <li>, so the "⋮" sits INSIDE it, to the right of the clickable row.
+   (The slot stays even when empty, so every row lines up.) */
+.fq-item {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.fq-item:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(15, 124, 128, 0.12);
+}
+.fq-item.status-in_consultation {
+  border-left: 4px solid var(--primary);
+  background: #f1faf8;
+}
+.fq-item.fq-item-acute.status-waiting {
+  border-left: 4px solid var(--danger);
+}
+.fq-item.status-completed {
+  opacity: 0.82;
+}
+.fq-item > .fq-row {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 12px 0 0 12px;
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+}
+.fq-item > .fq-row:hover {
+  box-shadow: none;
+}
+.fq-item-actions {
+  flex: 0 0 44px;
+  display: grid;
+  justify-items: center;
+  padding-right: 6px;
+}
+.fq-pending-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.fq-pending-actions .fq-pending-error {
+  max-width: 220px;
+  text-align: right;
+}
+
+/* Registration screen: "⋮" next to "Visit details" for today's open visit */
+.visit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.visit-action-notice {
+  margin-bottom: 14px;
+}
+
+/* Today's visit card: Change date / Cancel visit under the token */
+.visit-card-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.va-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.va-buttons .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.va-buttons .btn:only-child {
+  grid-column: 1 / -1;
+}
+
+/* Pending rows: the row is clickable (opens the patient); the "⋮" sits inside the box on the right */
+.fq-pending-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.fq-pending-row:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(15, 124, 128, 0.12);
+}
+.fq-pending-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1.3fr) minmax(0, 1.2fr);
+  gap: 12px 14px;
+  align-items: center;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 12px 0 0 12px;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+@media (max-width: 1100px) {
+  .fq-pending-open {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+}
+
+/* Registration screen: unseen visits from earlier days for the selected patient */
+.pv-banner {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #fffaf0;
+  border: 1px solid #f3d9a6;
+  border-left: 5px solid var(--amber);
+}
+.pv-banner h3 {
+  margin: 0;
+  font-size: 0.98rem;
+  color: #6b4600;
+}
+.pv-banner p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+.pv-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.pv-item-text {
+  display: grid;
+  gap: 2px;
+}
+.pv-item-text small {
+  color: var(--muted);
+}
+.pv-banner .va-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---------- Future appointments (BOOKED: pay on arrival, token at check-in) ---------- */
+.fq-pill.pill-booked {
+  background: #eef2ff;
+  color: #3f4fb3;
+  border: 1px dashed #8d9be0;
+}
+.fq-item.status-booked {
+  border-left: 4px dashed #8d9be0;
+  background: #fafbff;
+}
+.fq-checkin-hint {
+  color: #3f4fb3;
+  font-weight: 600;
+}
+.pv-banner-today {
+  background: #f5f7ff;
+  border-color: #c9d1f5;
+  border-left-color: #5b6fd6;
+}
+.pv-banner-today h3 {
+  color: #2f3c8f;
+}
+.pv-item-due {
+  border-color: #8d9be0;
+  box-shadow: 0 0 0 2px #eef2ff;
+}
+.pv-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.visit-when-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.visit-when-row .fq-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.visit-when-date {
+  width: auto;
+  min-width: 170px;
+}
+.booking-banner .success-icon {
+  background: linear-gradient(135deg, #5b6fd6, #3f4fb3);
+  color: #fff;
+}
+.fq-tag.fq-tag-phone {
+  background: #eef2ff;
+  color: #3f4fb3;
+  border-color: #c9d1f5;
+}

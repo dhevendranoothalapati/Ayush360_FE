@@ -24,16 +24,19 @@ export type RegistrationType = 'OP' | 'IP' | 'EMERGENCY' | 'ICU';
  * Both are "acute" visits: no consultation fee at the desk — charges go to the patient's bill,
  * an optional advance/deposit can be collected.
  */
-export type VisitSource = 'WALK_IN' | 'ONLINE' | 'REFERRAL' | 'EMERGENCY' | 'ICU';
+/** PHONE = booked over the phone: always an appointment (pay on arrival), even for today. */
+export type VisitSource = 'WALK_IN' | 'PHONE' | 'ONLINE' | 'REFERRAL' | 'EMERGENCY' | 'ICU';
 export const isAcuteSource = (s: VisitSource) => s === 'EMERGENCY' || s === 'ICU';
 export type VisitStatus = 'REGISTERED' | 'CANCELLED' | 'COMPLETED';
-export type QueueStatus = 'WAITING' | 'IN_CONSULTATION' | 'COMPLETED' | 'ADMISSION_REQUESTED' | 'CONVERTED_TO_INPATIENT';
+/** BOOKED = OPD appointment (later day or phone): token given at booking, fee collected at check-in. */
+export type QueueStatus = 'BOOKED' | 'WAITING' | 'IN_CONSULTATION' | 'COMPLETED' | 'ADMISSION_REQUESTED' | 'CONVERTED_TO_INPATIENT';
 export type PaymentStatus = 'PAID' | 'UNPAID';
 /** FOLLOW_UP = no fee collected (free follow-up visit within the hospital's follow-up window). */
 export type PaymentMode = 'CASH' | 'UPI' | 'CARD' | 'FOLLOW_UP';
 
 export const VISIT_SOURCE_OPTIONS: { value: VisitSource; label: string }[] = [
   { value: 'WALK_IN', label: 'Walk-in' },
+  { value: 'PHONE', label: 'Phone appointment' },
   { value: 'ONLINE', label: 'Online appointment' },
   { value: 'REFERRAL', label: 'Referral' },
   { value: 'EMERGENCY', label: 'Emergency' },
@@ -111,6 +114,7 @@ export const PAYMENT_MODE_OPTIONS: { value: PaymentMode; label: string }[] = [
 ];
 
 export const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
+  BOOKED: 'Booked',
   WAITING: 'Waiting',
   IN_CONSULTATION: 'In consultation',
   COMPLETED: 'Completed',
@@ -215,6 +219,8 @@ export interface PayerFields {
 }
 
 export interface VisitInput extends PayerFields, AcuteFields {
+  /** yyyy-mm-dd for a future OPD appointment (pay on arrival); '' = today (register and pay now). */
+  visitDate: string;
   /** Advance / deposit collected now for Emergency or ICU (digits; '' = none). */
   depositAmount: string;
   departmentId: number | '';
@@ -251,6 +257,8 @@ export interface Registration extends PayerFields, AcuteFields {
   id: number;
   registrationNumber: string;
   registrationDate: string;
+  /** yyyy-mm-dd the visit is booked for (differs from registrationDate when the desk moved it). */
+  visitDate?: string;
   registrationType: RegistrationType;
   patientId: number;
   departmentId: number;
@@ -270,6 +278,10 @@ export interface Registration extends PayerFields, AcuteFields {
   /** Registration number of the paid visit this follow-up belongs to. */
   followUpOf: string | null;
   createdAt: string;
+  /** yyyy-mm-dd it was first booked for, when the desk moved it to another day (mock only for now). */
+  rescheduledFrom?: string;
+  /** Why the desk cancelled it (mock only for now). */
+  cancelReason?: string;
 }
 
 export interface Receipt {
@@ -278,6 +290,8 @@ export interface Receipt {
   mode: PaymentMode;
   referenceNumber: string | null;
   paidAt: string;
+  /** REFUND = money given back for a cancelled visit (subtracted from collections). Absent = payment. */
+  kind?: 'REFUND';
 }
 
 export interface CreateRegistrationResponse {
@@ -324,6 +338,7 @@ export const EMPTY_ACUTE: AcuteFields = {
 };
 
 export const EMPTY_VISIT: VisitInput = {
+  visitDate: '',
   departmentId: '',
   doctorId: '',
   registrationType: 'OP',
@@ -436,6 +451,12 @@ export interface FrontDeskQueueItem {
   followUpDate: string;
   /** WARD, ICU, HDU, DAY_CARE when the doctor requested admission, else ''. */
   admissionType: string;
+  /** yyyy-mm-dd the visit is booked for. */
+  visitDate: string;
+  /** yyyy-mm-dd it was first booked for, when the desk moved it to another day; else ''. */
+  rescheduledFrom: string;
+  /** How the visit came in (PHONE shows "Phone appointment"). */
+  source: VisitSource;
 }
 
 export interface FrontDeskQueueCounts {
@@ -446,6 +467,8 @@ export interface FrontDeskQueueCounts {
   admissionRequested: number;
   awaitingLabResults: number;
   emergency: number;
+  /** Appointments for the day not checked in yet (not in total). */
+  booked: number;
 }
 
 /** A doctor in the day's list: available or paused (reason, expected back) and their pace. */
@@ -468,6 +491,14 @@ export interface FrontDeskQueue {
   counts: FrontDeskQueueCounts;
   items: FrontDeskQueueItem[];
   doctors: FrontDeskDoctor[];
+  /** Today's queue only: every earlier OPD visit the doctor never saw (any age). Move to today / another day, or cancel. */
+  pending: FrontDeskQueueItem[];
+}
+
+export interface CancelVisitRequest {
+  reason: string;
+  /** Give the consultation fee back (refund receipt dated today). */
+  refund: boolean;
 }
 
 // ---------------------------------------------------------------- inpatients (GET /registration/inpatients)

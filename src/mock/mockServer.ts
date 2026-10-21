@@ -19,6 +19,7 @@ import type {
   Patient,
   PatientContext,
   PatientInput,
+  PaymentInput,
   PayerFields,
   AcuteFields,
   Receipt,
@@ -265,14 +266,22 @@ function isOpenVisit(r: Registration): boolean {
   );
 }
 
-/** Today's visit still in progress (waiting or with the doctor): no second visit with the same doctor. */
-function isActiveVisit(r: Registration): boolean {
-  return isOpenVisit(r) || (
-    new Date(r.registrationDate).toDateString() === new Date().toDateString() &&
+/** Visit (or appointment) still open on that day: no second one with the same doctor. day = yyyy-mm-dd. */
+function isActiveOn(r: Registration, day: string): boolean {
+  return (
+    localDate(r.registrationDate) === day &&
     r.visitStatus === 'REGISTERED' &&
-    r.queueStatus === 'IN_CONSULTATION'
+    (r.queueStatus === 'WAITING' || r.queueStatus === 'IN_CONSULTATION' || r.queueStatus === 'BOOKED')
   );
 }
+
+/** Appointments: up to this many days ahead (same as the server). */
+const BOOKING_MAX_DAYS = 30;
+const dayPlus = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return localDate(d.toISOString());
+};
 
 function receiptOf(ctx: Ctx, registrationId: number): Receipt | null {
   const rc = getDb().receipts.find((x) => x.tenantId === ctx.tenantId && x.registrationId === registrationId);
@@ -286,7 +295,7 @@ function receiptOf(ctx: Ctx, registrationId: number): Receipt | null {
  * a visit to the SAME doctor within N days of the last PAID consultation is free.
  * Free follow-ups do not restart the window.
  */
-function quoteFee(ctx: Ctx, doctorId: number, patientId?: number): FeeQuote {
+function quoteFee(ctx: Ctx, doctorId: number, patientId?: number, onDay?: string): FeeQuote {
   const db = getDb();
   const doctor = db.doctors.find((d) => d.id === doctorId && d.tenantId === ctx.tenantId);
   if (!doctor) throw new HttpError(404, 'Doctor not found');
@@ -312,6 +321,7 @@ function quoteFee(ctx: Ctx, doctorId: number, patientId?: number): FeeQuote {
         r.doctorId === doctorId &&
         r.visitStatus !== 'CANCELLED' &&
         !r.isFollowUp &&
+        r.queueStatus !== 'BOOKED' && // appointment not paid yet
         r.consultationFee > 0,
     )
     .sort((a, b) => b.registrationDate.localeCompare(a.registrationDate))[0];
@@ -319,7 +329,7 @@ function quoteFee(ctx: Ctx, doctorId: number, patientId?: number): FeeQuote {
 
   const paidDay = startOfDay(new Date(lastPaid.registrationDate));
   const freeUntil = new Date(paidDay.getTime() + days * DAY_MS);
-  const today = startOfDay(new Date());
+  const today = onDay ? new Date(`${onDay}T00:00:00`) : startOfDay(new Date());
   if (today.getTime() === paidDay.getTime() || today > freeUntil) return base; // same day = not a follow-up
   return {
     ...base,
@@ -342,7 +352,7 @@ function patientContext(ctx: Ctx, patientId: number): PatientContext {
     registration: strip(r) as Registration,
     receipt: receiptOf(ctx, r.id),
   }));
-  const last = visits.find((v) => !open.includes(v));
+  const last = visits.find((v) => !open.includes(v) && v.queueStatus !== 'BOOKED');
   return {
     patient: strip(patient) as Patient,
     openVisits,
@@ -405,7 +415,7 @@ function updateVisit(ctx: Ctx, registrationId: number, visit: VisitInput): Regis
 }
 
 function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateRegistrationResponse {
-  authorize(ctx, Permissions.REGISTRATION_CREATE, Permissions.PAYMENT_COLLECT);
+  authorize(ctx, Permissions.REGISTRATION_CREATE);
   const db = getDb();
   const now = new Date().toISOString();
 
@@ -424,6 +434,19 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
   if (!doctor) errors.doctorId = 'Select a doctor';
   if (isBlank(visit.reasonForVisit)) errors.reasonForVisit = 'Reason for visit is required';
   Object.assign(errors, validatePayer(visit), validateAcute(visit));
+  // Future date = appointment (OPD only): token given now, pay on arrival (check-in).
+  const today = dayPlus(0);
+  let visitDay = today;
+  if (visit.visitDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(visit.visitDate)) errors.visitDate = 'Choose a date';
+    else if (visit.visitDate < today) errors.visitDate = 'Choose today or a later date';
+    else if (visit.visitDate > dayPlus(BOOKING_MAX_DAYS))
+      errors.visitDate = `Appointments can be booked up to ${BOOKING_MAX_DAYS} days ahead`;
+    else if (visit.visitDate > today && emergency) errors.visitDate = 'Emergency / ICU is registered for today only';
+    else visitDay = visit.visitDate;
+  }
+  // Phone appointment: patient not here yet, so nothing is collected even for today.
+  const booking = visitDay > today || (!emergency && visit.source === 'PHONE');
 
   // --- patient (returning or new)
   let patient: Tenanted<Patient> | undefined;
@@ -447,10 +470,16 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
   // --- one open visit per doctor per day
   if (patient) {
     const dup = db.registrations.find(
-      (r) => r.tenantId === ctx.tenantId && r.patientId === patient!.id && r.doctorId === doctor!.id && isActiveVisit(r),
+      (r) => r.tenantId === ctx.tenantId && r.patientId === patient!.id && r.doctorId === doctor!.id && isActiveOn(r, visitDay),
     );
     if (dup) {
-      throw new HttpError(409, `This patient already has an open visit today with ${dup.doctorName} (token ${dup.tokenNumber}).`);
+      const when = visitDay === today ? 'today' : `on ${visitDay}`;
+      throw new HttpError(
+        409,
+        dup.queueStatus === 'BOOKED'
+          ? `This patient already has an appointment ${when} with ${dup.doctorName} (${dup.tokenNumber}).`
+          : `This patient already has an open visit ${when} with ${dup.doctorName} (token ${dup.tokenNumber}).`,
+      );
     }
   }
 
@@ -458,12 +487,13 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
   // Emergency: treat first — no payment now; the casualty fee is billed later.
   const quote = emergency
     ? { ...quoteFee(ctx, doctor!.id), fee: 0, isFollowUp: false, followUpOf: null }
-    : quoteFee(ctx, doctor!.id, patient?.id);
+    : quoteFee(ctx, doctor!.id, patient?.id, visitDay);
   let paymentMode: Receipt['mode'] = 'FOLLOW_UP';
   let reference: string | null = null;
   // Amount to take now: consultation fee for OPD, the advance/deposit (if any) for Emergency / ICU.
-  const dueNow = emergency ? deposit : quote.fee;
+  const dueNow = booking ? 0 : emergency ? deposit : quote.fee;
   if (dueNow > 0) {
+    authorize(ctx, Permissions.PAYMENT_COLLECT);
     if (!payment || payment.amount !== dueNow) {
       throw new HttpError(400, emergency ? 'Payment amount does not match the deposit' : 'Payment amount does not match the consultation fee');
     }
@@ -501,9 +531,10 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
     keepMaskedAadhaar(patient);
   }
   const p = patient!;
-  const day = todayKey();
+  const day = visitDay.replace(/-/g, '');
   // Emergency cases get their own token series (E-001…) so casualty is never mixed into the OPD queue.
-  const series = icu ? 'I' : emergency ? 'E' : 'A'; // ICU entries: I-001…, Emergency: E-001…, OPD: A-001…
+  // Appointments get their A-token now (keeps their place in the line); the fee is collected at check-in.
+  const series = icu ? 'I' : emergency ? 'E' : 'A';
   const tokenSeq = nextSequence(`token:${ctx.tenantId}:${day}:${series}`);
   const regSeq = nextSequence(`reg:${ctx.tenantId}:${day}`);
 
@@ -511,7 +542,8 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
     tenantId: ctx.tenantId,
     id: nextSequence('registrationId'),
     registrationNumber: `${icu ? 'ICU' : emergency ? 'ER' : 'OP'}-${day}-${pad(regSeq, 4)}`,
-    registrationDate: now,
+    registrationDate: booking ? new Date(`${visitDay}T09:00:00`).toISOString() : now,
+    visitDate: visitDay,
     registrationType: icu ? 'ICU' : emergency ? 'EMERGENCY' : 'OP',
     patientId: p.id,
     departmentId: dept!.id,
@@ -522,16 +554,16 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
     reasonForVisit: visit.reasonForVisit.trim(),
     messageConsent: visit.messageConsent,
     visitStatus: 'REGISTERED',
-    queueStatus: 'WAITING',
+    queueStatus: booking ? 'BOOKED' : 'WAITING',
     tokenNumber: `${series}-${pad(tokenSeq, 3)}`,
     consultationFee: emergency ? 0 : quote.fee,
-    // Emergency / ICU: charges (and any balance after the deposit) are billed later.
-    paymentStatus: emergency ? 'UNPAID' : 'PAID',
+    // Emergency / ICU: charges (and any balance after the deposit) are billed later. Appointment: pay on arrival.
+    paymentStatus: emergency || booking ? 'UNPAID' : 'PAID',
     depositAmount: deposit,
     mlcNumber: emergency && visit.isMlc ? nextMlcNumber(ctx) : null,
     ...acuteColumns(visit),
-    isFollowUp: quote.isFollowUp,
-    followUpOf: quote.followUpOf,
+    isFollowUp: !booking && quote.isFollowUp,
+    followUpOf: booking ? null : quote.followUpOf,
     ...payerColumns(visit),
     createdAt: now,
   };
@@ -539,7 +571,7 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
 
   // Emergency / ICU without deposit: nothing collected, so no receipt (billed later in Billing).
   const receipt =
-    dueNow === 0 && emergency
+    booking || (dueNow === 0 && emergency)
       ? null
       : {
         tenantId: ctx.tenantId,
@@ -553,7 +585,7 @@ function createRegistration(ctx: Ctx, req: CreateRegistrationRequest): CreateReg
       };
   if (receipt) db.receipts.push(receipt);
 
-  p.lastVisitDate = now;
+  if (!booking) p.lastVisitDate = now;
   p.updatedAt = now;
   saveDb();
 
@@ -664,6 +696,7 @@ function doctorQueue(ctx: Ctx, date: string | null): DoctorQueue {
   const me = myDoctor(ctx);
   const regs = db.registrations
     .filter((r) => r.tenantId === ctx.tenantId && localDate(r.registrationDate) === day && r.visitStatus !== 'CANCELLED')
+    .filter((r) => r.queueStatus !== 'BOOKED') // appointments reach the doctor once checked in
     .filter((r) => !me || r.doctorId === me.id)
     .sort((a, b) => a.registrationDate.localeCompare(b.registrationDate));
   const items: QueueItem[] = regs.map((r) => {
@@ -823,10 +856,26 @@ function frontDeskQueue(ctx: Ctx, date: string | null): FrontDeskQueue {
   authorize(ctx, Permissions.QUEUE_VIEW);
   const db = getDb();
   const day = date || localDate(new Date().toISOString());
+  const isToday = day === localDate(new Date().toISOString());
+  const notAdmitted = (r: Registration) => r.registrationType !== 'IP' && r.registrationType !== 'ICU';
   const regs = db.registrations
     .filter((r) => r.tenantId === ctx.tenantId && localDate(r.registrationDate) === day && r.visitStatus !== 'CANCELLED')
+    .filter(notAdmitted) // OP queue = OPD + Emergency; admitted patients are on the Inpatient queue
     .sort((a, b) => a.registrationDate.localeCompare(b.registrationDate));
-  const items: FrontDeskQueueItem[] = regs.map((r) => {
+  // Today only: every earlier OPD visit the doctor never saw, however old (nothing drops off silently).
+  const pendingRegs = isToday
+    ? db.registrations
+        .filter(
+          (r) =>
+            r.tenantId === ctx.tenantId &&
+            r.registrationType === 'OP' &&
+            r.visitStatus === 'REGISTERED' &&
+            (r.queueStatus === 'WAITING' || r.queueStatus === 'BOOKED') &&
+            localDate(r.registrationDate) < day,
+        )
+        .sort((a, b) => a.registrationDate.localeCompare(b.registrationDate))
+    : [];
+  const toItem = (r: Tenanted<Registration>): FrontDeskQueueItem => {
     const p = db.patients.find((x) => x.id === r.patientId)!;
     const enc = db.encounters.find((e) => e.visitId === r.id);
     return {
@@ -844,7 +893,8 @@ function frontDeskQueue(ctx: Ctx, date: string | null): FrontDeskQueue {
       doctorName: r.doctorName,
       departmentName: r.departmentName,
       reasonForVisit: r.reasonForVisit,
-      registeredAt: r.registrationDate,
+      // Appointment: when it was booked; otherwise when the patient joined the queue.
+      registeredAt: r.queueStatus === 'BOOKED' ? r.createdAt : r.registrationDate,
       queueStatus: r.queueStatus,
       triageLevel: r.triageLevel,
       isFollowUp: r.isFollowUp,
@@ -859,21 +909,27 @@ function frontDeskQueue(ctx: Ctx, date: string | null): FrontDeskQueue {
       labStatus: labStatusOf(r.queueStatus, enc?.labOrders ?? []),
       followUpDate: enc?.followUpDate ?? '',
       admissionType: enc?.admissionRequested ? enc.admissionType : '',
+      visitDate: localDate(r.registrationDate),
+      rescheduledFrom: r.rescheduledFrom ?? '',
+      source: r.source,
     };
-  });
+  };
+  const items = regs.map(toItem);
   const count = (s: string) => regs.filter((r) => r.queueStatus === s).length;
   return {
     date: day,
     counts: {
-      total: regs.length,
+      total: regs.length - count('BOOKED'),
       waiting: count('WAITING'),
       inConsultation: count('IN_CONSULTATION'),
       completed: count('COMPLETED'),
       admissionRequested: count('ADMISSION_REQUESTED'),
       awaitingLabResults: items.filter((i) => i.labStatus === 'AWAITING_RESULTS').length,
       emergency: regs.filter((r) => r.registrationType === 'EMERGENCY' || r.registrationType === 'ICU').length,
+      booked: count('BOOKED'),
     },
     items,
+    pending: pendingRegs.map(toItem),
     doctors: doctorBoard(
       ctx,
       [...new Map(items.map((i) => [i.doctorId, { id: i.doctorId, name: i.doctorName }])).values()],
@@ -893,7 +949,7 @@ function inpatientList(ctx: Ctx): InpatientList {
         r.tenantId === ctx.tenantId &&
         r.visitStatus !== 'CANCELLED' &&
         (((r.registrationType === 'IP' || r.registrationType === 'ICU') && daysAgo(r.registrationDate) <= 30) ||
-          (r.queueStatus === 'ADMISSION_REQUESTED' && daysAgo(r.registrationDate) <= 3)),
+          r.queueStatus === 'ADMISSION_REQUESTED'), // until admitted: no time limit
     )
     .map((r) => {
       const p = db.patients.find((x) => x.id === r.patientId)!;
@@ -936,6 +992,145 @@ function inpatientList(ctx: Ctx): InpatientList {
     },
     items,
   };
+}
+
+/** Cancel a visit the doctor hasn't started (any day); refund = refund receipt dated today. */
+function cancelVisit(ctx: Ctx, id: number, body: { reason?: string; refund?: boolean }): Registration {
+  authorize(ctx, Permissions.REGISTRATION_CREATE);
+  const db = getDb();
+  const r = findVisit(ctx, id);
+  if (r.visitStatus !== 'REGISTERED' || (r.queueStatus !== 'WAITING' && r.queueStatus !== 'BOOKED'))
+    throw new HttpError(409, "Only visits the doctor hasn't started can be cancelled.");
+  const reason = (body.reason ?? '').trim();
+  if (!reason) throw new HttpError(400, 'Enter why the visit is cancelled', { reason: 'Enter why the visit is cancelled' });
+  if (reason.length > 200) throw new HttpError(400, 'Maximum 200 characters', { reason: 'Maximum 200 characters' });
+  if (body.refund) {
+    authorize(ctx, Permissions.PAYMENT_COLLECT);
+    const own = db.receipts.filter((rc) => rc.tenantId === ctx.tenantId && rc.registrationId === r.id);
+    const due =
+      own.filter((rc) => rc.kind !== 'REFUND').reduce((s, rc) => s + rc.amount, 0) -
+      own.filter((rc) => rc.kind === 'REFUND').reduce((s, rc) => s + rc.amount, 0);
+    if (due > 0) {
+      const last = own.filter((rc) => rc.kind !== 'REFUND').at(-1);
+      db.receipts.push({
+        tenantId: ctx.tenantId,
+        registrationId: r.id,
+        receiptNumber: `RF-${todayKey()}-${pad(nextSequence(`receipt:${ctx.tenantId}:${todayKey()}`), 5)}`,
+        amount: due,
+        mode: last?.mode ?? 'CASH',
+        referenceNumber: null,
+        paidAt: new Date().toISOString(),
+        collectedByUserId: ctx.user.id,
+        kind: 'REFUND',
+      });
+    }
+  }
+  r.visitStatus = 'CANCELLED';
+  r.cancelReason = reason;
+  saveDb();
+  return strip(r);
+}
+
+/** Move an OPD visit the doctor hasn't started to today or a later day (new token for that day). */
+function rescheduleVisit(ctx: Ctx, id: number, body: { date?: string }): Registration {
+  authorize(ctx, Permissions.REGISTRATION_CREATE);
+  const db = getDb();
+  const r = findVisit(ctx, id);
+  if (r.visitStatus !== 'REGISTERED' || (r.queueStatus !== 'WAITING' && r.queueStatus !== 'BOOKED'))
+    throw new HttpError(409, "Only visits the doctor hasn't started can be moved.");
+  if (r.registrationType !== 'OP') throw new HttpError(409, 'Only OPD visits can be moved to another day.');
+  const target = body.date ?? '';
+  const today = localDate(new Date().toISOString());
+  const max = new Date();
+  max.setDate(max.getDate() + 30);
+  const fail = (msg: string) => new HttpError(400, msg, { date: msg });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) throw fail('Choose a date');
+  if (target < today) throw fail('Choose today or a later date');
+  if (target > localDate(max.toISOString())) throw fail('Choose a date within 30 days');
+  const current = localDate(r.registrationDate);
+  if (target === current) throw fail('The visit is already on this date');
+  const clash = db.registrations.find(
+    (o) =>
+      o.id !== r.id &&
+      o.tenantId === ctx.tenantId &&
+      o.patientId === r.patientId &&
+      o.doctorId === r.doctorId &&
+      isActiveOn(o, target),
+  );
+  if (clash) throw new HttpError(409, `The patient already has a visit with this doctor on that day (token ${clash.tokenNumber}).`);
+  const key = target.replace(/-/g, '');
+  r.rescheduledFrom = r.rescheduledFrom ?? current;
+  // The visit now belongs to the new day; waiting time counts from now when moved to today.
+  r.registrationDate = target === today ? new Date().toISOString() : new Date(`${target}T09:00:00`).toISOString();
+  // New token for that day; an appointment stays an appointment (pay on arrival).
+  const series = 'A';
+  r.visitDate = target;
+  r.tokenNumber = `${series}-${pad(nextSequence(`token:${ctx.tenantId}:${key}:${series}`), 3)}`;
+  saveDb();
+  return strip(r);
+}
+
+/** Patient with today's appointment arrived: fee (follow-up rule applied for today) + today's A-token. */
+function checkIn(ctx: Ctx, id: number, body: { payment?: PaymentInput | null }): CreateRegistrationResponse {
+  authorize(ctx, Permissions.REGISTRATION_CREATE);
+  const db = getDb();
+  const r = findVisit(ctx, id);
+  if (r.visitStatus !== 'REGISTERED' || r.queueStatus !== 'BOOKED')
+    throw new HttpError(409, 'This visit is not a booked appointment (already checked in or cancelled).');
+  const today = dayPlus(0);
+  const day = localDate(r.registrationDate);
+  if (day !== today)
+    throw new HttpError(
+      409,
+      day > today
+        ? 'The appointment is for a later day. Change the date to today first.'
+        : 'The appointment date has passed. Change the date to today first.',
+    );
+  const dup = db.registrations.find(
+    (o) => o.id !== r.id && o.tenantId === ctx.tenantId && o.patientId === r.patientId && o.doctorId === r.doctorId && isActiveOn(o, today),
+  );
+  if (dup) throw new HttpError(409, `This patient already has an open visit today with ${dup.doctorName} (token ${dup.tokenNumber}).`);
+
+  const quote = quoteFee(ctx, r.doctorId, r.patientId, today);
+  const payment = body.payment ?? undefined;
+  let mode: Receipt['mode'] = 'FOLLOW_UP';
+  let reference: string | null = null;
+  if (quote.fee > 0) {
+    authorize(ctx, Permissions.PAYMENT_COLLECT);
+    if (!payment || payment.amount !== quote.fee) throw new HttpError(400, 'Payment amount does not match the consultation fee');
+    if (payment.mode !== 'CASH' && isBlank(payment.referenceNumber))
+      throw new HttpError(400, 'Transaction reference is required for UPI / card payments');
+    if (payment.referenceNumber?.trim() === '0000') throw new HttpError(402, 'Payment was declined. The patient was not checked in.');
+    mode = payment.mode;
+    reference = payment.referenceNumber?.trim() || null;
+  }
+  const now = new Date().toISOString();
+  const key = todayKey();
+  Object.assign(r, {
+    queueStatus: 'WAITING',
+    paymentStatus: 'PAID',
+    consultationFee: quote.fee,
+    isFollowUp: quote.isFollowUp,
+    followUpOf: quote.followUpOf,
+    registrationDate: now, // waiting time counts from arrival
+    // token stays the one given at booking
+  });
+  const receipt = {
+    tenantId: ctx.tenantId,
+    registrationId: r.id,
+    receiptNumber: `RC-${key}-${pad(r.id, 5)}`,
+    amount: quote.fee,
+    mode,
+    referenceNumber: reference,
+    paidAt: now,
+    collectedByUserId: ctx.user.id,
+  };
+  db.receipts.push(receipt);
+  const p = db.patients.find((x) => x.id === r.patientId)!;
+  p.lastVisitDate = now;
+  saveDb();
+  const { registrationId, collectedByUserId, ...rest } = strip(receipt);
+  return { isNewPatient: false, patient: strip(p) as Patient, registration: strip(r) as Registration, receipt: rest };
 }
 
 function consultationOf(ctx: Ctx, visitId: number): Consultation {
@@ -1273,7 +1468,21 @@ async function route(req: MockRequest): Promise<unknown> {
   if (m === 'GET' && path === '/registration/fee-quote') {
     const patientId = q.get('patientId');
     if (patientId) findPatient(ctx, Number(patientId)); // tenant check
-    return quoteFee(ctx, Number(q.get('doctorId')), patientId ? Number(patientId) : undefined);
+    const onDay = q.get('date');
+    return quoteFee(
+      ctx,
+      Number(q.get('doctorId')),
+      patientId ? Number(patientId) : undefined,
+      onDay && onDay > dayPlus(0) ? onDay : undefined,
+    );
+  }
+  const regAction = path.match(/^\/registration\/registrations\/(\d+)\/(cancel|reschedule|check-in)$/);
+  if (m === 'POST' && regAction) {
+    if (regAction[2] === 'check-in')
+      return checkIn(ctx, Number(regAction[1]), (req.body ?? {}) as { payment?: PaymentInput | null });
+    return regAction[2] === 'cancel'
+      ? cancelVisit(ctx, Number(regAction[1]), (req.body ?? {}) as { reason?: string; refund?: boolean })
+      : rescheduleVisit(ctx, Number(regAction[1]), (req.body ?? {}) as { date?: string });
   }
   const regMatch = path.match(/^\/registration\/registrations\/(\d+)$/);
   if (m === 'PUT' && regMatch) {
@@ -1299,14 +1508,24 @@ async function route(req: MockRequest): Promise<unknown> {
     authorize(ctx, Permissions.PATIENT_VIEW);
     const today = new Date().toDateString();
     const regs = db.registrations.filter(
-      (r) => r.tenantId === ctx.tenantId && new Date(r.registrationDate).toDateString() === today,
+      (r) =>
+        r.tenantId === ctx.tenantId &&
+        new Date(r.registrationDate).toDateString() === today &&
+        r.visitStatus !== 'CANCELLED' &&
+        r.queueStatus !== 'BOOKED', // appointments count once checked in
     );
     const ids = new Set(regs.map((r) => r.id));
     const firstVisits = regs.filter((r) => {
       const p = db.patients.find((x) => x.id === r.patientId);
       return p && new Date(p.createdAt).toDateString() === today;
     });
-    const todaysReceipts = db.receipts.filter((rc) => rc.tenantId === ctx.tenantId && ids.has(rc.registrationId));
+    // Payments for today's visits, minus refunds paid out today (cancelled visits of any day).
+    const todaysReceipts = db.receipts.filter(
+      (rc) =>
+        rc.tenantId === ctx.tenantId &&
+        (rc.kind === 'REFUND' ? new Date(rc.paidAt).toDateString() === today : ids.has(rc.registrationId)),
+    );
+    const signed = (rc: { amount: number; kind?: string }) => (rc.kind === 'REFUND' ? -rc.amount : rc.amount);
     const canSeeAll = ctx.permissions.includes(Permissions.COLLECTION_VIEW_ALL);
     return {
       registeredToday: regs.length,
@@ -1314,9 +1533,9 @@ async function route(req: MockRequest): Promise<unknown> {
       newPatients: new Set(firstVisits.map((r) => r.patientId)).size,
       myCollectedToday: todaysReceipts
         .filter((rc) => rc.collectedByUserId === ctx.user.id)
-        .reduce((sum, rc) => sum + rc.amount, 0),
+        .reduce((sum, rc) => sum + signed(rc), 0),
       // Only admins / accounts get the hospital total; everyone else gets null.
-      totalCollectedToday: canSeeAll ? todaysReceipts.reduce((sum, rc) => sum + rc.amount, 0) : null,
+      totalCollectedToday: canSeeAll ? todaysReceipts.reduce((sum, rc) => sum + signed(rc), 0) : null,
     };
   }
 

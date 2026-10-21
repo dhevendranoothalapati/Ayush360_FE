@@ -5,11 +5,13 @@ import type {
   Department,
   Doctor,
   FeeQuote,
+  CancelVisitRequest,
   FrontDeskQueue,
   InpatientList,
   Patient,
   PatientContext,
   PatientInput,
+  PaymentInput,
   Registration,
   TodaySummary,
   VisitInput,
@@ -38,8 +40,12 @@ export const registrationApi = {
     http.put<Patient>(`/registration/patients/${id}`, patient),
 
   /** Fee to collect for this doctor; applies the hospital's free follow-up rule. */
-  getFeeQuote: (doctorId: number, patientId?: number) =>
-    http.get<FeeQuote>('/registration/fee-quote', { doctorId, patientId }),
+  getFeeQuote: (doctorId: number, patientId?: number, date?: string) =>
+    http.get<FeeQuote>('/registration/fee-quote', { doctorId, patientId, date: date || undefined }),
+
+  /** Patient with today's appointment arrived: collect the fee (if any), issue today's token, join the queue. */
+  checkIn: (registrationId: number, payment?: PaymentInput) =>
+    http.post<CreateRegistrationResponse>(`/registration/registrations/${registrationId}/check-in`, { payment: payment ?? null }),
 
   /**
    * Collects the consultation fee (if any) and creates the visit in one server call.
@@ -54,6 +60,14 @@ export const registrationApi = {
 
   /** Everyone registered for a day (all doctors) with their latest status. date = yyyy-mm-dd, default today. */
   getQueue: (date?: string) => http.get<FrontDeskQueue>('/registration/queue', { date }),
+
+  /** Cancel a visit the doctor hasn't started (optionally refunding the fee). */
+  cancelVisit: (registrationId: number, req: CancelVisitRequest) =>
+    http.post<Registration>(`/registration/registrations/${registrationId}/cancel`, req),
+
+  /** Move an OPD visit the doctor hasn't started to another day (yyyy-mm-dd); it gets that day's token. */
+  rescheduleVisit: (registrationId: number, date: string) =>
+    http.post<Registration>(`/registration/registrations/${registrationId}/reschedule`, { date }),
 
   /** Everyone currently admitted (any admission date) + patients the doctor asked to admit. */
   getInpatients: () => http.get<InpatientList>('/registration/inpatients'),

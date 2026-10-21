@@ -2,10 +2,18 @@ import { Icon } from '@/shared/components/Icons';
 import { formatCurrency, formatTime } from '@/shared/utils/format';
 import { PAYMENT_MODE_LABEL, QUEUE_STATUS_LABEL } from '../types';
 import type { RegistrationFormState } from '../hooks/useRegistrationForm';
+import { VisitActions, addDays } from './VisitActions';
 
 const shortDate = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
-export function TodaysVisitCard({ form }: { form: RegistrationFormState }) {
+export function TodaysVisitCard({
+  form,
+  onVisitAction,
+}: {
+  form: RegistrationFormState;
+  /** After Change date / Cancel visit: the page reloads the patient and shows the message. */
+  onVisitAction?: (message: string) => void;
+}) {
   const { selectedDepartment, selectedDoctor, openVisit, feeQuote, visit } = form;
   const reg = openVisit?.registration;
   const receipt = openVisit?.receipt ?? null;
@@ -182,6 +190,25 @@ export function TodaysVisitCard({ form }: { form: RegistrationFormState }) {
               </>
             )}
           </dl>
+          {/* Still waiting (doctor hasn't started): the desk can move it to another day or cancel it. */}
+          {onVisitAction && reg.visitStatus === 'REGISTERED' && reg.queueStatus === 'WAITING' && !form.saving && (
+            <div className="visit-card-actions">
+              <VisitActions
+                variant="buttons"
+                item={{
+                  visitId: reg.id,
+                  visitDate: addDays(0), // an open visit is always today's
+                  registrationType: reg.registrationType,
+                  paymentStatus: reg.paymentStatus,
+                  consultationFee: reg.consultationFee,
+                  patientName: [form.patient.firstName, form.patient.lastName].filter(Boolean).join(' '),
+                  doctorName: reg.doctorName,
+                  tokenNumber: reg.tokenNumber,
+                }}
+                onChanged={onVisitAction}
+              />
+            </div>
+          )}
         </>
       ) : emergency ? (
         <p className="field-hint emergency-hint">

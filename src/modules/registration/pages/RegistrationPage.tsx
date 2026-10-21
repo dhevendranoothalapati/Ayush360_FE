@@ -6,13 +6,15 @@ import { PatientSearch } from '../components/PatientSearch';
 import { PatientDetailsForm } from '../components/PatientDetailsForm';
 import { VisitDetailsForm } from '../components/VisitDetailsForm';
 import { TodaysVisitCard } from '../components/TodaysVisitCard';
+import { PatientPendingVisits } from '../components/PatientPendingVisits';
 import { PaymentDialog } from '../components/PaymentDialog';
 import { FrontDeskHero } from '../components/FrontDeskHero';
 import { RegistrationStepper } from '../components/RegistrationStepper';
 import { PayerDetailsForm } from '../components/PayerDetailsForm';
 import { RegistrationReceipt } from '../components/RegistrationReceipt';
 import { AcuteDetailsForm } from '../components/AcuteDetailsForm';
-import { useRegistrationForm } from '../hooks/useRegistrationForm';
+import { isBooking, localIsoDate, useRegistrationForm, visitDayOf } from '../hooks/useRegistrationForm';
+import { dayLabel } from '../components/VisitActions';
 import type { Patient } from '../types';
 import '../registration.css';
 
@@ -27,6 +29,18 @@ export default function RegistrationPage() {
   const dirty = form.patientEdited || form.visitEdited;
   const location = useLocation();
   const navigate = useNavigate();
+  /** Message after Change date / Cancel on today's open visit. */
+  const [visitActionMessage, setVisitActionMessage] = useState<string | null>(null);
+
+  // A different patient (or a new one) clears the message.
+  const selectedId = form.selectedPatient?.id;
+  useEffect(() => setVisitActionMessage(null), [selectedId]);
+
+  async function afterVisitAction(message: string) {
+    if (form.selectedPatient) await form.selectPatient(form.selectedPatient); // reload: visit moved or cancelled
+    setVisitActionMessage(message);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   // Opened from the Patient queue: load that patient (and today's visit) straight away.
   const openPatientId = (location.state as { patientId?: number } | null)?.patientId;
@@ -50,12 +64,15 @@ export default function RegistrationPage() {
   const acute = form.isAcute; // Emergency or ICU: no consultation fee, optional deposit
   const deposit = acute ? Number(form.visit.depositAmount || 0) : 0;
   const freeFollowUp = !acute && feeQuote?.isFollowUp === true;
-  const noPaymentNow = (acute && deposit === 0) || freeFollowUp;
+  // Future appointment: nothing collected now (pay on arrival, at check-in).
+  const booking = deskState !== 'OPEN_VISIT' && isBooking(form.visit);
+  const noPaymentNow = booking || (acute && deposit === 0) || freeFollowUp;
+  const bookedResult = result?.registration.queueStatus === 'BOOKED';
 
   async function startRegistration() {
     if (!form.validateAll()) return;
     if (noPaymentNow) {
-      // Emergency / ICU without deposit, or free follow-up: nothing to collect, register straight away.
+      // Appointment, Emergency / ICU without deposit, or free follow-up: nothing to collect, register straight away.
       try {
         await form.submit();
       } catch {
@@ -71,7 +88,29 @@ export default function RegistrationPage() {
       <FrontDeskHero summary={form.summary} />
       <RegistrationStepper form={form} />
 
-      {result && (
+      {result && bookedResult && (
+        <div className="success-banner booking-banner" role="status">
+          <span className="success-icon">
+            <Icon name="calendar" size={26} />
+          </span>
+          <div>
+            <div className="success-kicker">
+              {result.registration.source === 'PHONE' ? 'Phone appointment booked' : 'Appointment booked'} · pay on arrival
+            </div>
+            <div className="success-token">
+              Token number: {result.registration.tokenNumber} ·{' '}
+              {dayLabel(result.registration.visitDate || result.registration.registrationDate.slice(0, 10))}
+            </div>
+            <div className="success-text">
+              {fullName(result.patient)} ({result.patient.patientNumber}) with {result.registration.doctorName}. When the
+              patient arrives that day, open them here and click Check in — the fee is collected then and they join the
+              doctor's line with this token.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {result && !bookedResult && (
         <div className="success-banner" role="status">
           <span className="success-icon">
             <Icon name="check" size={26} />
@@ -113,9 +152,16 @@ export default function RegistrationPage() {
         </div>
       )}
 
+      {visitActionMessage && (
+        <div className="alert alert-success visit-action-notice" role="status">
+          {visitActionMessage}
+        </div>
+      )}
+
       <div className="registration-grid">
         <div className="registration-main">
           <PatientSearch onSelect={(p) => void form.selectPatient(p)} />
+          <PatientPendingVisits form={form} onChanged={(m) => void afterVisitAction(m)} />
 
           <div className="card form-card">
             <PatientDetailsForm form={form} disabled={form.saving} />
@@ -193,8 +239,14 @@ export default function RegistrationPage() {
                   disabled={form.saving}
                 >
                   {form.saving
-                    ? 'Registering…'
-                    : acute
+                    ? booking
+                      ? 'Booking…'
+                      : 'Registering…'
+                    : booking
+                      ? `Book appointment · ${
+                          visitDayOf(form.visit) === localIsoDate() ? 'Today' : dayLabel(visitDayOf(form.visit))
+                        }`
+                      : acute
                       ? `Register ${form.isIcu ? 'ICU admission' : 'emergency'}${deposit > 0 ? ' & collect deposit' : ''}`
                       : freeFollowUp
                         ? 'Register free follow-up'
@@ -205,7 +257,7 @@ export default function RegistrationPage() {
           </div>
         </div>
 
-        <TodaysVisitCard form={form} />
+        <TodaysVisitCard form={form} onVisitAction={(m) => void afterVisitAction(m)} />
       </div>
 
       {openVisit && form.selectedPatient && <RegistrationReceipt patient={form.selectedPatient} visit={openVisit} />}

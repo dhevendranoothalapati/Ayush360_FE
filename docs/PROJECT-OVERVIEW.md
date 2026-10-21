@@ -4,8 +4,15 @@
 **Repository folder:** `C:\Ayush360\Frontend`
 **Tech stack:** React 19, TypeScript, Vite, React Router 7. There is no UI library; the styling is plain CSS.
 **Screenshots:** `docs/login.png`, `docs/registration-success.png`
-**Status:** iteration 1 is done. The Front Desk Patient Registration screen works against a mock API.
-**Last updated:** 1 October 2026
+**Status:** Front Desk (Registration, OP Queue, Inpatient Queue, appointments) and the first version of the Doctor
+module work against the real HMS API (and the mock). Admin module planned: see `docs/ADMIN-MODULE-BACKLOG.md`.
+**Last updated:** 21 October 2026
+
+**Other docs in this folder:**
+- `FRONT-DESK-QUEUE-AND-APPOINTMENTS.md` – OP Queue, Inpatient Queue, cancel / change date, appointments and check-in
+- `ADMIN-MODULE-BACKLOG.md` – everything the Admin module must cover, including settings that are hard-coded today
+- `EMERGENCY-ICU-PROPOSAL.md` – Emergency and ICU entry design
+- Backend: `Ayush360_BE/docs/registration-queue-and-appointments.md`, `Ayush360_BE/docs/deployment-azure.md`
 
 ---
 
@@ -43,14 +50,15 @@ src/
 
 | # | Module (code) | Screens | Status |
 |---|---|---|---|
-| 1 | Front Desk (`REGISTRATION`) | Registration | ✅ Done |
-| | | OPD Queue, Visit Details, Active Inpatients, Beds and Rooms, Inpatient Details | ⏳ Next |
+| 1 | Front Desk (`REGISTRATION`) | Registration, OP Queue, Inpatient Queue, appointments (book / phone / check-in), cancel, change date | ✅ Done |
+| | | Beds and Rooms, Inpatient Details, Discharge step | ⏳ Next |
 | 2 | Billing and Discharge (`BILLING`) | Inpatient Billing, Discharge | Placeholder |
 | 3 | Doctor (`DOCTOR`) | My Patients (own queue), consultation, prescription + print, lab orders, admission request | ✅ First version (11 Oct 2026) |
 | 4 | Nursing (`NURSE`) | Vitals, nursing notes, bed cleaning | Placeholder |
 | 5 | Pharmacy (`PHARMACY`) | Dispensing, returns, inventory | Placeholder |
 | 6 | Laboratory (`LAB`) | Orders, samples, results | Placeholder |
 | 7 | Payroll (`PAYROLL`) | Employees, salaries, payslips | Placeholder |
+| 8 | Admin | Users, roles, password policy, masters, settings, treatment templates, audit, import / export | 📋 Planned – `ADMIN-MODULE-BACKLOG.md` |
 
 ---
 
@@ -145,8 +153,15 @@ All endpoints are under `/api` and use a Bearer token. The tenant is resolved on
 | PUT | `/registration/patients/{id}` | Correct patient details only (needs `PATIENT_EDIT`); creates no visit |
 | GET | `/registration/registrations/summary` | Today's counts (whole hospital): `registeredToday`, `waiting`, `newPatients`; `myCollectedToday` = fees received by the signed-in user; `totalCollectedToday` = all desks, returned only with `COLLECTION_VIEW_ALL` (else `null`) |
 | GET | `/registration/patients/{id}/context` | Patient + `openVisits[]` (all of today's open visits with receipts) + `visits[]` (history, newest first, latest 20) + `lastVisit` |
-| GET | `/registration/fee-quote?doctorId=&patientId=` | Fee to collect now; applies the free follow-up rule |
+| GET | `/registration/fee-quote?doctorId=&patientId=&date=` | Fee to collect now (or on `date` for an appointment); applies the free follow-up rule |
 | POST | `/registration/registrations` | Payment (omitted when the fee is 0) plus registration in one call. `{ patient }` = new patient; `{ patientId }` = existing; `{ patientId, patient }` also updates details. 409 if an open visit with that doctor already exists today |
+| POST | `/registration/registrations/{id}/check-in` | Booked patient arrived: `{ payment }` → fee, receipt, Waiting (token unchanged) |
+| POST | `/registration/registrations/{id}/cancel` | `{ reason, refund }`; Booked or Waiting only |
+| POST | `/registration/registrations/{id}/reschedule` | `{ date }`; OPD, today … +30 days; new token for that day |
+| GET | `/registration/queue?date=` | OP queue + `pending[]` (earlier unseen) + `doctors[]` board + `counts` |
+| GET | `/registration/inpatients` | Admitted patients + admission requests |
+| GET | `/doctor/availability` · POST `/doctor/availability/away` · POST `/doctor/availability/back` | Doctor pause with reason / return |
+| GET | `/doctor/prescription-suggestions?icd10Code=&description=` | Medicines this doctor prescribed last time for the diagnosis (auto-fill, "Suggested · review") |
 | PUT | `/registration/registrations/{id}` | Edit an open visit (department, doctor, type, reason, consent). Open = today and still **Waiting**. 409 if closed, or if the fee would change |
 | GET | `/doctor/queue?date=` | Day's patients: doctors get only their own (`isDoctor: true`); admins see all, view only. `counts` + `items[]` |
 | GET | `/doctor/visits/{visitId}` | Patient, visit, doctor, `encounter` (null until started), `canStart`, `canEdit`, `history[]` (earlier consultations) |
@@ -198,3 +213,8 @@ npm run build          # boundary check + type check + production build
 | 11 Oct 2026 | State is a dropdown of all states/UTs (default Andhra Pradesh); optional Aadhaar (encrypted on the server, shown as XXXX XXXX 1234, searchable, duplicate check, never kept in drafts) |
 | 11 Oct 2026 | Front desk can edit a visit only while the patient is Waiting (read-only once with the doctor) |
 | 11 Oct 2026 | Doctor module: My Patients queue (own patients, next patient, filters, 30 s refresh); consultation with vitals (BMI), complaints/history/allergies (carried forward), examination, ICD-10 diagnosis (primary), prescription (medicine list + free text, dose/frequency/timing/days), lab tests, advice + review date, admission request; save / complete; A5 printed prescription; previous consultations panel. Mock DB v12 adds Dr. Sriya Reddy (SR10310) as a General Medicine doctor |
+| Oct 2026 | Session: silent token refresh, idle sign-out after 15 min (60 s warning), 12 h maximum session |
+| Oct 2026 | Front desk patient queue → **OP Queue** and **Inpatient Queue**; doctor strip with pause reasons and expected times; pending visits from earlier days; cancel (reason, refund) and change date via ⋮ menus; actions on the Registration screen |
+| Oct 2026 | Docker: one backend Dockerfile (identity, hms, migrator) + nginx frontend image; `deploy/docker-compose.yml`; Azure guide in the backend repo |
+| 21 Oct 2026 | Appointments: Visit date (up to 30 days), **Booked** state (token at booking, pay on arrival), **Phone appointment** visit type, check-in with fee, waiting line ordered by token number |
+| 21 Oct 2026 | `ADMIN-MODULE-BACKLOG.md` and `FRONT-DESK-QUEUE-AND-APPOINTMENTS.md` added |
